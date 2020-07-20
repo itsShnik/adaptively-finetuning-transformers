@@ -10,6 +10,7 @@ config = _C
 _C.RNG_SEED = -1
 _C.OUTPUT_PATH = ''
 _C.MODULE = ''
+_C.POLICY_MODULE = ''
 _C.GPUS = ''
 _C.LOG_FREQUENT = 50
 _C.VAL_FREQUENT = 1
@@ -162,6 +163,11 @@ _C.POLICY.CNN_LOSS_WEIGHT = 1.0
 _C.POLICY.ANS_LOSS_WEIGHT = 1.0
 _C.POLICY.ANS_LOSS_TYPE = 'bce' # 'bce' or 'ce'
 _C.POLICY.REPLACE_OBJECT_CHANGE_LABEL = True
+_C.POLICY.OPTIMIZER = 'SGD'
+_C.POLICY.LR = 0.1 
+_C.POLICY.MOMENTUM = 0.9 
+_C.POLICY.WD = 0.0001 
+
 
 # ------------------------------------------------------------------------------------- #
 # Policy VLBERT options
