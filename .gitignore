@@ -1,0 +1,8 @@
+# exclude the data folder
+data*
+
+# pycache
+*pycache*
+
+# so files
+.so
