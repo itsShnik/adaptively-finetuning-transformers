@@ -18,6 +18,7 @@ _C.CHECKPOINT_FREQUENT = 1
 _C.MODEL_PREFIX = ''
 _C.NUM_WORKERS_PER_GPU = 4
 _C.SCALES = ()
+_C.FINETUNE_STRATEGY = ''
 
 # ------------------------------------------------------------------------------------- #
 # Common dataset options
@@ -163,11 +164,26 @@ _C.POLICY.CNN_LOSS_WEIGHT = 1.0
 _C.POLICY.ANS_LOSS_WEIGHT = 1.0
 _C.POLICY.ANS_LOSS_TYPE = 'bce' # 'bce' or 'ce'
 _C.POLICY.REPLACE_OBJECT_CHANGE_LABEL = True
-_C.POLICY.OPTIMIZER = 'SGD'
-_C.POLICY.LR = 0.1 
-_C.POLICY.MOMENTUM = 0.9 
-_C.POLICY.WD = 0.0001 
 
+#--------------------------------------------------------------------------------------- #
+# Policy network optimizer options
+#--------------------------------------------------------------------------------------- #
+
+_C.POLICY.OPTIMIZER = 'SGD'
+_C.POLICY.CLIP_GRAD_NORM = -1
+_C.POLICY.GRAD_ACCUMULATE_STEPS = 1
+_C.POLICY.LR = 0.1
+_C.POLICY.LR_SCHEDULE = 'step'  # step/triangle/plateau
+_C.POLICY.LR_FACTOR = 0.1
+_C.POLICY.LR_STEP = ()
+_C.POLICY.WARMUP = False
+_C.POLICY.WARMUP_METHOD = 'linear'
+_C.POLICY.WARMUP_FACTOR = 1.0 / 3
+_C.POLICY.WARMUP_STEPS = 1000
+_C.POLICY.WD = 0.0001
+_C.POLICY.MOMENTUM = 0.9
+_C.POLICY.FP16 = False
+_C.POLICY.FP16_LOSS_SCALE = 128.0
 
 # ------------------------------------------------------------------------------------- #
 # Policy VLBERT options
