@@ -172,6 +172,7 @@ class ResNetVLBERT(Module):
                       im_info,
                       question,
                       label,
+                      policy=None
                       ):
         ###########################################
 

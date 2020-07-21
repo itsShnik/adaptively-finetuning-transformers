@@ -2,6 +2,7 @@ import os
 import time
 from collections import namedtuple
 import torch
+from common.gumbel_softmax import gumbel_softmax
 
 try:
     from apex import amp
@@ -129,9 +130,7 @@ def train(net,
             # if policy, find the probs
             if finetune_strategy == 'SpotTune':
                 policy_vector = policy_net(*batch)
-                #TODO: implement gumbel softmax
                 policy_action = gumbel_softmax(policy_vector.view(policy_vector.size(0), -1, 2))
-                #TODO: change the net accordingly
                 policy = policy_action[:,:,1]
                 outputs, loss = net(*batch, policy)
             else:

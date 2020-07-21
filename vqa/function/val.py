@@ -1,7 +1,7 @@
 from collections import namedtuple
 import torch
 from common.trainer import to_cuda
-
+from common.gumbel_softmax import gumbel_softmax
 
 @torch.no_grad()
 def do_validation(net, val_loader, metrics, label_index_in_batch, policy_net=None, policy_optimizer=None):
