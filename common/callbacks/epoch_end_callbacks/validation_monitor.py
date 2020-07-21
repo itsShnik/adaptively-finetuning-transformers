@@ -23,7 +23,7 @@ class ValidationMonitor(object):
         self.best_epoch = state_dict['best_epoch']
         self.best_val = state_dict['best_val']
 
-    def __call__(self, epoch_num, net, optimizer, writer, policy_net, policy_optimizer):
+    def __call__(self, epoch_num, net, optimizer, writer, policy_net=None, policy_optimizer=None):
         self.val_func(net, self.val_loader, self.metrics, self.label_index_in_batch, policy_net)
 
         name, value = self.metrics.get()
