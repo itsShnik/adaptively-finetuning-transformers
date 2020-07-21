@@ -69,7 +69,11 @@ def train(net,
           validation_monitor=None,
           fp16=False,
           clip_grad_norm=-1,
-          gradient_accumulate_steps=1):
+          gradient_accumulate_steps=1,
+          finetune_strategy='standard',
+          policy_net=None,
+          policy_optimizer=None,
+          policy_lr_scheduler=None):
 
     assert isinstance(gradient_accumulate_steps, int) and gradient_accumulate_steps >= 1
 
@@ -85,6 +89,10 @@ def train(net,
 
         # set net to train mode
         net.train()
+
+        # if there is a policy net, set it to train
+        if policy_net is not None:
+            policy_net.train()
 
         # clear the paramter gradients
         # optimizer.zero_grad()
@@ -110,9 +118,25 @@ def train(net,
             batch = to_cuda(batch)
             data_transfer_time = time.time() - data_transfer_time
 
+            # clear the gradients
+            optimizer.zero_grad()
+            if policy_optimizer is not None:
+                policy_optimizer.zero_grad()
+
             # forward
             forward_time = time.time()
-            outputs, loss = net(*batch)
+
+            # if policy, find the probs
+            if finetune_strategy == 'SpotTune':
+                policy_vector = policy_net(*batch)
+                #TODO: implement gumbel softmax
+                policy_action = gumbel_softmax(policy_vector.view(policy_vector.size(0), -1, 2))
+                #TODO: change the net accordingly
+                policy = policy_action[:,:,1]
+                outputs, loss = net(*batch, policy)
+            else:
+                outputs, loss = net(*batch)
+
             loss = loss.mean()
             if gradient_accumulate_steps > 1:
                 loss = loss / gradient_accumulate_steps
@@ -135,6 +159,11 @@ def train(net,
                                                                torch.optim.lr_scheduler.ReduceLROnPlateau):
                     lr_scheduler.step()
 
+                # step LR scheduler
+                if policy_lr_scheduler is not None and not isinstance(lr_scheduler,
+                                                               torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    policy_lr_scheduler.step()
+
                 # clip gradient
                 if clip_grad_norm > 0:
                     if fp16:
@@ -149,8 +178,9 @@ def train(net,
                                           global_step=global_steps)
 
                 optimizer.step()
-                # clear the parameter gradients
-                optimizer.zero_grad()
+                if policy_optimizer is not None:
+                    policy_optimizer.step()
+
             optimizer_time = time.time() - optimizer_time
 
             # update metric
@@ -190,8 +220,8 @@ def train(net,
 
         # excute epoch_end_callbacks
         if validation_monitor is not None:
-            validation_monitor(epoch, net, optimizer, writer)
+            validation_monitor(epoch, net, optimizer, writer, policy_net, policy_optimizer)
         if epoch_end_callbacks is not None:
-            _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor)
+            _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor, policy_net=policy_net, policy_optimizer=policy_optimizer)
 
 
