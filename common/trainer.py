@@ -220,7 +220,7 @@ def train(net,
 
         # excute epoch_end_callbacks
         if validation_monitor is not None:
-            validation_monitor(epoch, net, optimizer, writer, policy_net, policy_optimizer)
+            validation_monitor(epoch, net, optimizer, writer, policy_net=policy_net, policy_optimizer=policy_optimizer)
         if epoch_end_callbacks is not None:
             _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor, policy_net=policy_net, policy_optimizer=policy_optimizer)
 
