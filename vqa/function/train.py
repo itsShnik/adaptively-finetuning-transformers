@@ -24,6 +24,7 @@ from common.lr_scheduler import WarmupMultiStepLR
 from common.nlp.bert.optimization import AdamW, WarmupLinearSchedule
 from vqa.data.build import make_dataloader, build_dataset, build_transforms
 from vqa.modules import *
+from vqa.policy_modules import *
 from vqa.function.val import do_validation
 
 try:
@@ -371,6 +372,37 @@ def train_net(args, config):
     else:
         raise ValueError("Not support lr schedule: {}.".format(config.TRAIN.LR_SCHEDULE))
 
+    if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+        # setup lr step and lr scheduler for policy
+        if config.POLICY.LR_SCHEDULE == 'plateau':
+            print("Warning: not support resuming on plateau lr schedule!")
+            policy_lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+                                                                      mode='max',
+                                                                      factor=config.POLICY.LR_FACTOR,
+                                                                      patience=1,
+                                                                      verbose=True,
+                                                                      threshold=1e-4,
+                                                                      threshold_mode='rel',
+                                                                      cooldown=2,
+                                                                      min_lr=0,
+                                                                      eps=1e-8)
+        elif config.POLICY.LR_SCHEDULE == 'triangle':
+            policy_lr_scheduler = WarmupLinearSchedule(optimizer,
+                                                config.POLICY.WARMUP_STEPS if config.POLICY.WARMUP else 0,
+                                                t_total=int(config.POLICY.END_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS),
+                                                last_epoch=int(config.POLICY.BEGIN_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS)  - 1)
+        elif config.POLICY.LR_SCHEDULE == 'step':
+            policy_lr_iters = [int(epoch * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS) for epoch in config.POLICY.LR_STEP]
+            policy_lr_scheduler = WarmupMultiStepLR(optimizer, milestones=policy_lr_iters, gamma=config.POLICY.LR_FACTOR,
+                                             warmup_factor=config.POLICY.WARMUP_FACTOR,
+                                             warmup_iters=config.POLICY.WARMUP_STEPS if config.POLICY.WARMUP else 0,
+                                             warmup_method=config.POLICY.WARMUP_METHOD,
+                                             last_epoch=int(config.POLICY.BEGIN_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS)  - 1)
+        else:
+            raise ValueError("Not support lr schedule: {}.".format(config.POLICY.LR_SCHEDULE))
+
+
+
     # broadcast parameter and optimizer state from rank 0 before training start
     if args.dist:
         for v in model.state_dict().values():
@@ -412,6 +444,6 @@ def train_net(args, config):
           rank=rank, batch_end_callbacks=batch_end_callbacks, epoch_end_callbacks=epoch_end_callbacks,
           writer=writer, validation_monitor=validation_monitor, fp16=config.TRAIN.FP16,
           clip_grad_norm=config.TRAIN.CLIP_GRAD_NORM,
-          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_model=policy_model if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None, policy_optimizer=policy_optimizer if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None)
+          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_net=policy_model if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None, policy_optimizer=policy_optimizer if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None, policy_lr_scheduler=policy_lr_scheduler if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None)
 
     return rank, model
