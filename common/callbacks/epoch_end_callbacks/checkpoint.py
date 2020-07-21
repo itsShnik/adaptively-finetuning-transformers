@@ -7,12 +7,15 @@ class Checkpoint(object):
         self.prefix = prefix
         self.frequent = frequent
 
-    def __call__(self, epoch_num, net, optimizer, writer, validation_monitor=None):
+    def __call__(self, epoch_num, net, optimizer, writer, validation_monitor=None, policy_net=None, policy_optimizer=None):
         if (epoch_num + 1) % self.frequent == 0:
             param_name = '{}-{:04d}.model'.format(self.prefix, epoch_num)
             checkpoint_dict = dict()
             checkpoint_dict['state_dict'] = net.state_dict()
             checkpoint_dict['optimizer'] = optimizer.state_dict()
+            if policy_net is not None:
+                checkpoint_dict['policy_state_dict'] = policy_net.state_dict()
+                checkpoint_dict['policy_optimizer'] = policy_optimizer.state_dict()
             save_to_best = False
             if validation_monitor is not None:
                 checkpoint_dict['validation_monitor'] = validation_monitor.state_dict()

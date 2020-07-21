@@ -10,6 +10,7 @@ config = _C
 _C.RNG_SEED = -1
 _C.OUTPUT_PATH = ''
 _C.MODULE = ''
+_C.POLICY_MODULE = ''
 _C.GPUS = ''
 _C.LOG_FREQUENT = 50
 _C.VAL_FREQUENT = 1
@@ -17,6 +18,7 @@ _C.CHECKPOINT_FREQUENT = 1
 _C.MODEL_PREFIX = ''
 _C.NUM_WORKERS_PER_GPU = 4
 _C.SCALES = ()
+_C.FINETUNE_STRATEGY = ''
 
 # ------------------------------------------------------------------------------------- #
 # Common dataset options
@@ -86,6 +88,10 @@ _C.NETWORK.ANS_LOSS_WEIGHT = 1.0
 _C.NETWORK.ANS_LOSS_TYPE = 'bce' # 'bce' or 'ce'
 _C.NETWORK.REPLACE_OBJECT_CHANGE_LABEL = True
 
+# ------------------------------------------------------------------------------------- #
+# Network VLBERT options
+# ------------------------------------------------------------------------------------- #
+
 _C.NETWORK.VLBERT = edict()
 # _C.NETWORK.VLBERT.vocab_size = None
 _C.NETWORK.VLBERT.input_size = 1280
@@ -119,6 +125,106 @@ _C.NETWORK.CLASSIFIER_HIDDEN_SIZE = 1024
 _C.NETWORK.CLASSIFIER_DROPOUT = 0.1
 _C.NETWORK.CLASSIFIER_SIGMOID = False
 _C.NETWORK.CLASSIFIER_SIGMOID_LOSS_POSITIVE_WEIGHT = 1.0
+
+# ------------------------------------------------------------------------------------- #
+# Common Policy Network Options
+# ------------------------------------------------------------------------------------- #
+
+_C.POLICY = edict()
+_C.POLICY.BLIND = False
+_C.POLICY.NO_GROUNDING = False
+_C.POLICY.PARTIAL_PRETRAIN = ""
+_C.POLICY.PARTIAL_PRETRAIN_PREFIX_CHANGES = []
+_C.POLICY.FOR_MASK_VL_MODELING_PRETRAIN = False
+_C.POLICY.NO_OBJ_ATTENTION = False
+_C.POLICY.IMAGE_FEAT_PRECOMPUTED = False
+_C.POLICY.IMAGE_NUM_LAYERS = 50
+_C.POLICY.IMAGE_C5_DILATED = False
+_C.POLICY.IMAGE_STRIDE_IN_1x1 = False
+_C.POLICY.PIXEL_MEANS = ()
+_C.POLICY.PIXEL_STDS = ()
+_C.POLICY.IMAGE_PRETRAINED = ''
+_C.POLICY.IMAGE_PRETRAINED_EPOCH = 0
+_C.POLICY.IMAGE_FROZEN_BACKBONE_STAGES = [1, 2]
+_C.POLICY.IMAGE_FROZEN_BN = True
+_C.POLICY.IMAGE_FINAL_DIM = 512
+_C.POLICY.IMAGE_SEMANTIC = False
+_C.POLICY.OUTPUT_CONV5 = False
+_C.POLICY.BERT_MODEL_NAME = 'bert-base-uncased'
+_C.POLICY.BERT_PRETRAINED = ''
+_C.POLICY.BERT_PRETRAINED_EPOCH = 0
+_C.POLICY.BERT_FROZEN = True
+_C.POLICY.BERT_ALIGN_QUESTION = True
+_C.POLICY.BERT_ALIGN_ANSWER = True
+_C.POLICY.BERT_USE_LAYER = -2
+_C.POLICY.BERT_WITH_NSP_LOSS = False
+_C.POLICY.BERT_WITH_MLM_LOSS = False
+_C.POLICY.ENABLE_CNN_REG_LOSS = True
+_C.POLICY.CNN_LOSS_WEIGHT = 1.0
+_C.POLICY.ANS_LOSS_WEIGHT = 1.0
+_C.POLICY.ANS_LOSS_TYPE = 'bce' # 'bce' or 'ce'
+_C.POLICY.REPLACE_OBJECT_CHANGE_LABEL = True
+
+#--------------------------------------------------------------------------------------- #
+# Policy network optimizer options
+#--------------------------------------------------------------------------------------- #
+
+_C.POLICY.OPTIMIZER = 'SGD'
+_C.POLICY.CLIP_GRAD_NORM = -1
+_C.POLICY.GRAD_ACCUMULATE_STEPS = 1
+_C.POLICY.LR = 0.1
+_C.POLICY.LR_SCHEDULE = 'step'  # step/triangle/plateau
+_C.POLICY.LR_FACTOR = 0.1
+_C.POLICY.LR_STEP = ()
+_C.POLICY.WARMUP = False
+_C.POLICY.WARMUP_METHOD = 'linear'
+_C.POLICY.WARMUP_FACTOR = 1.0 / 3
+_C.POLICY.WARMUP_STEPS = 1000
+_C.POLICY.WD = 0.0001
+_C.POLICY.MOMENTUM = 0.9
+_C.POLICY.FP16 = False
+_C.POLICY.FP16_LOSS_SCALE = 128.0
+
+# ------------------------------------------------------------------------------------- #
+# Policy VLBERT options
+# ------------------------------------------------------------------------------------- #
+
+_C.POLICY.VLBERT = edict()
+# _C.POLICY.VLBERT.vocab_size = None
+_C.POLICY.VLBERT.input_size = 1280
+# 1: LN + [1x1 conv] 2: LN + [1x1 conv] + dropout 3: LN + [1x1 conv] + dropout + BertLayer
+_C.POLICY.VLBERT.input_transform_type = 1
+_C.POLICY.VLBERT.word_embedding_frozen = False
+_C.POLICY.VLBERT.obj_pos_id_relative = True
+_C.POLICY.VLBERT.hidden_size = 512
+_C.POLICY.VLBERT.visual_size = 512
+_C.POLICY.VLBERT.num_hidden_layers = 4
+_C.POLICY.VLBERT.num_attention_heads = 8
+_C.POLICY.VLBERT.intermediate_size = 2048
+_C.POLICY.VLBERT.hidden_act = "gelu"
+_C.POLICY.VLBERT.hidden_dropout_prob = 0.1
+_C.POLICY.VLBERT.attention_probs_dropout_prob = 0.1
+_C.POLICY.VLBERT.max_position_embeddings = 512
+_C.POLICY.VLBERT.type_vocab_size = 3
+_C.POLICY.VLBERT.vocab_size = 30522
+_C.POLICY.VLBERT.initializer_range = 0.02
+_C.POLICY.VLBERT.visual_scale_text_init = 0.0
+_C.POLICY.VLBERT.visual_scale_object_init = 0.0
+_C.POLICY.VLBERT.visual_ln = False
+# 1: class embedding 2: class agnostic embedding 3: average of word embedding of text
+_C.POLICY.VLBERT.object_word_embed_mode = 2
+_C.POLICY.VLBERT.with_pooler = False
+_C.POLICY.VLBERT.position_padding_idx = -1
+
+_C.POLICY.CLASSIFIER_TYPE = "2fc"    # 2fc or 1fc or mlm
+_C.POLICY.CLASSIFIER_PRETRAINED = False
+_C.POLICY.CLASSIFIER_HIDDEN_SIZE = 1024
+_C.POLICY.CLASSIFIER_DROPOUT = 0.1
+_C.POLICY.CLASSIFIER_SIGMOID = False
+_C.POLICY.CLASSIFIER_SIGMOID_LOSS_POSITIVE_WEIGHT = 1.0
+# Number of blocks to freeze
+__C.POLICY.OUTPUT_SIZE = 144
+
 
 # ------------------------------------------------------------------------------------- #
 # Common training related options

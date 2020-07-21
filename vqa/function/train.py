@@ -24,6 +24,7 @@ from common.lr_scheduler import WarmupMultiStepLR
 from common.nlp.bert.optimization import AdamW, WarmupLinearSchedule
 from vqa.data.build import make_dataloader, build_dataset, build_transforms
 from vqa.modules import *
+from vqa.policy_modules import *
 from vqa.function.val import do_validation
 
 try:
@@ -35,6 +36,10 @@ except ImportError:
 
 
 def train_net(args, config):
+    # will load pretrained
+    if config.NETWORK.PARTIAL_PRETRAIN != "":
+        load_pretrained_vlbert = True
+
     # setup logger
     logger, final_output_path = create_logger(config.OUTPUT_PATH, args.cfg, config.DATASET.TRAIN_IMAGE_SET,
                                               split='train')
@@ -80,10 +85,19 @@ def train_net(args, config):
         torch.cuda.set_device(local_rank)
         config.GPUS = str(local_rank)
         model = model.cuda()
+
+        # the policy network
+        if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+            policy_model = eval(config.POLICY_MODULE)(config)
+            policy_model = policy_model.cuda()
+
         if not config.TRAIN.FP16:
             model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+            if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+                policy_model = DDP(policy_model, device_ids=[local_rank], output_device=local_rank)
 
         if rank == 0:
+            summary_parameters(policy_model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model,
             summary_parameters(model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model,
                                logger)
             shutil.copy(args.cfg, final_output_path)
@@ -137,12 +151,40 @@ def train_net(args, config):
                               correct_bias=True)
         else:
             raise ValueError('Not support optimizer {}!'.format(config.TRAIN.OPTIMIZER))
+
+        # optimizer for the policy network
+        if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+            if config.POLICY.OPTIMIZER == 'SGD':
+                policy_optimizer = optim.SGD(policy_model.parameters(),
+                                            lr=config.POLICY.LR * batch_size,
+                                            momentum=config.POLICY.MOMENTUM,
+                                            weight_decay=config.POLICY.WD)
+            elif config.POLICY.OPTIMIZER == 'Adam':
+                policy_optimizer = optim.Adam(policy_model.parameters(),
+                                       lr=config.POLICY.LR * batch_size,
+                                       weight_decay=config.POLICY.WD)
+            elif config.POLICY.OPTIMIZER == 'AdamW':
+                policy_optimizer = AdamW(policy_model.parameters(),
+                                  lr=config.POLICY.LR * batch_size,
+                                  betas=(0.9, 0.999),
+                                  eps=1e-6,
+                                  weight_decay=config.POLICY.WD,
+                                  correct_bias=True)
+            else:
+                raise ValueError('Not support optimizer {}!'.format(config.POLICY.OPTIMIZER))
+
         total_gpus = world_size
 
     else:
         #os.environ['CUDA_VISIBLE_DEVICES'] = config.GPUS
         model = eval(config.MODULE)(config)
+
+        # the policy network
+        if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+            policy_model = eval(config.POLICY_MODULE)(config)
+
         summary_parameters(model, logger)
+        summary_parameters(policy_model, logger)
         shutil.copy(args.cfg, final_output_path)
         shutil.copy(inspect.getfile(eval(config.MODULE)), final_output_path)
         num_gpus = len(config.GPUS.split(','))
@@ -155,9 +197,16 @@ def train_net(args, config):
         # model
         if num_gpus > 1:
             model = torch.nn.DataParallel(model, device_ids=[int(d) for d in config.GPUS.split(',')]).cuda()
+
+            # policy network
+            if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+                policy_model = torch.nn.DataParallel(policy_model, device_ids = [int(d) for d in config.GPUS.split(',')]).cuda()
         else:
             torch.cuda.set_device(int(config.GPUS))
             model.cuda()
+            # policy network
+            if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+                policy_model.cuda()
 
         # loader
         train_loader = make_dataloader(config, mode='train', distributed=False)
@@ -194,8 +243,29 @@ def train_net(args, config):
         else:
             raise ValueError('Not support optimizer {}!'.format(config.TRAIN.OPTIMIZER))
 
+        # optimizer for the policy network
+        if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+            if config.POLICY.OPTIMIZER == 'SGD':
+                policy_optimizer = optim.SGD(policy_model.parameters(),
+                                            lr=config.POLICY.LR * batch_size,
+                                            momentum=config.POLICY.MOMENTUM,
+                                            weight_decay=config.POLICY.WD)
+            elif config.POLICY.OPTIMIZER == 'Adam':
+                policy_optimizer = optim.Adam(policy_model.parameters(),
+                                       lr=config.POLICY.LR * batch_size,
+                                       weight_decay=config.POLICY.WD)
+            elif config.POLICY.OPTIMIZER == 'AdamW':
+                policy_optimizer = AdamW(policy_model.parameters(),
+                                  lr=config.POLICY.LR * batch_size,
+                                  betas=(0.9, 0.999),
+                                  eps=1e-6,
+                                  weight_decay=config.POLICY.WD,
+                                  correct_bias=True)
+            else:
+                raise ValueError('Not support optimizer {}!'.format(config.POLICY.OPTIMIZER))
+
     # partial load pretrain state dict
-    if config.NETWORK.PARTIAL_PRETRAIN != "":
+    if load_pretrained_vlbert:
         pretrain_state_dict = torch.load(config.NETWORK.PARTIAL_PRETRAIN, map_location=lambda storage, loc: storage)['state_dict']
         prefix_change = [prefix_change.split('->') for prefix_change in config.NETWORK.PARTIAL_PRETRAIN_PREFIX_CHANGES]
         if len(prefix_change) > 0:
@@ -302,10 +372,44 @@ def train_net(args, config):
     else:
         raise ValueError("Not support lr schedule: {}.".format(config.TRAIN.LR_SCHEDULE))
 
+    if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+        # setup lr step and lr scheduler for policy
+        if config.POLICY.LR_SCHEDULE == 'plateau':
+            print("Warning: not support resuming on plateau lr schedule!")
+            policy_lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+                                                                      mode='max',
+                                                                      factor=config.POLICY.LR_FACTOR,
+                                                                      patience=1,
+                                                                      verbose=True,
+                                                                      threshold=1e-4,
+                                                                      threshold_mode='rel',
+                                                                      cooldown=2,
+                                                                      min_lr=0,
+                                                                      eps=1e-8)
+        elif config.POLICY.LR_SCHEDULE == 'triangle':
+            policy_lr_scheduler = WarmupLinearSchedule(optimizer,
+                                                config.POLICY.WARMUP_STEPS if config.POLICY.WARMUP else 0,
+                                                t_total=int(config.POLICY.END_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS),
+                                                last_epoch=int(config.POLICY.BEGIN_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS)  - 1)
+        elif config.POLICY.LR_SCHEDULE == 'step':
+            policy_lr_iters = [int(epoch * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS) for epoch in config.POLICY.LR_STEP]
+            policy_lr_scheduler = WarmupMultiStepLR(optimizer, milestones=policy_lr_iters, gamma=config.POLICY.LR_FACTOR,
+                                             warmup_factor=config.POLICY.WARMUP_FACTOR,
+                                             warmup_iters=config.POLICY.WARMUP_STEPS if config.POLICY.WARMUP else 0,
+                                             warmup_method=config.POLICY.WARMUP_METHOD,
+                                             last_epoch=int(config.POLICY.BEGIN_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS)  - 1)
+        else:
+            raise ValueError("Not support lr schedule: {}.".format(config.POLICY.LR_SCHEDULE))
+
+
+
     # broadcast parameter and optimizer state from rank 0 before training start
     if args.dist:
         for v in model.state_dict().values():
             distributed.broadcast(v, src=0)
+        if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+            for v in policy_model.state_dict().values():
+                distributed.broadcast(v, src=0)
         # for v in optimizer.state_dict().values():
         #     distributed.broadcast(v, src=0)
         best_epoch = torch.tensor(validation_monitor.best_epoch).cuda()
@@ -323,14 +427,23 @@ def train_net(args, config):
                                           keep_batchnorm_fp32=False,
                                           loss_scale=config.TRAIN.FP16_LOSS_SCALE,
                                           min_loss_scale=32.0)
+        
+        if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+            policy_model, policy_optimizer = amp.initialize(policy_model, policy_optimizer,
+                                            opt_level='O2',
+                                            keep_batchnorm_fp32=False,
+                                            loss_scale=config.TRAIN.FP16_LOSS_SCALE,
+                                            min_loss_scale=32.0)
         if args.dist:
             model = Apex_DDP(model, delay_allreduce=True)
+            if load_pretrained_vlbert and config.FINETUNE_STRATEGY == 'SpotTune':
+                policy_model = Apex_DDP(policy_model, delay_allreduce=True)
 
     train(model, optimizer, lr_scheduler, train_loader, train_sampler, train_metrics,
           config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH, logger,
           rank=rank, batch_end_callbacks=batch_end_callbacks, epoch_end_callbacks=epoch_end_callbacks,
           writer=writer, validation_monitor=validation_monitor, fp16=config.TRAIN.FP16,
           clip_grad_norm=config.TRAIN.CLIP_GRAD_NORM,
-          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS)
+          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_net=policy_model if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None, policy_optimizer=policy_optimizer if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None, policy_lr_scheduler=policy_lr_scheduler if load_pretrained_vlbert and config.FINETUNE_STRATEGY=='SpotTune' else None)
 
     return rank, model
