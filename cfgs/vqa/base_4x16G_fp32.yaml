@@ -2,6 +2,7 @@
 RNG_SEED: 12345
 OUTPUT_PATH: './output/vl-bert/vqa'
 MODULE: ResNetVLBERT
+POLICY_MODULE: PolicyResNetVLBERT
 GPUS: '0,1,2,3'
 LOG_FREQUENT: 100
 VAL_FREQUENT: 1
@@ -87,6 +88,15 @@ NETWORK:
   CLASSIFIER_DROPOUT: 0.1
 
 POLICY:
+  OPTIMIZER: 'AdamW'
+  CLIP_GRAD_NORM: 1.0
+  LR: 6.25e-7
+  LR_SCHEDULE: 'triangle'
+  WD: 0.0001
+  WARMUP: true
+  WARMUP_METHOD: 'linear'
+  WARMUP_FACTOR: 0.0
+  WARMUP_STEPS: 500
   PARTIAL_PRETRAIN: "./model/pretrained_model/vl-bert-base-prec.model"
   PARTIAL_PRETRAIN_PREFIX_CHANGES:
   - "vlbert.mlm_head.predictions.transform->final_mlp.0"
