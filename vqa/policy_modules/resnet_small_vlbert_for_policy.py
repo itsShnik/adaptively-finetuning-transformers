@@ -47,7 +47,7 @@ class PolicyResNetVLBERT(Module):
             print("Warning: no pretrained language model found, training from scratch!!!")
 
         self.vlbert = VisualLinguisticBert(config.POLICY.VLBERT,
-                                         language_pretrained_model_path=language_pretrained_model_path)
+                                         language_pretrained_model_path=language_pretrained_model_path, is_policy_net=True)
 
         # self.hm_out = nn.Linear(config.POLICY.VLBERT.hidden_size, config.POLICY.VLBERT.hidden_size)
         # self.hi_out = nn.Linear(config.POLICY.VLBERT.hidden_size, config.POLICY.VLBERT.hidden_size)
@@ -65,6 +65,14 @@ class PolicyResNetVLBERT(Module):
             self.final_mlp = torch.nn.Sequential(
                 torch.nn.Dropout(config.POLICY.CLASSIFIER_DROPOUT, inplace=False),
                 torch.nn.Linear(dim, config.POLICY.OUTPUT_SIZE)
+            )
+        elif config.NETWORK.CLASSIFIER_TYPE == 'mlm':
+            transform = BertPredictionHeadTransform(config.NETWORK.VLBERT)
+            linear = nn.Linear(config.NETWORK.VLBERT.hidden_size, config.POLICY.OUTPUT_SIZE)
+            self.final_mlp = nn.Sequential(
+                transform,
+                nn.Dropout(config.POLICY.CLASSIFIER_DROPOUT, inplace=False),
+                linear
             )
         else:
             raise ValueError("Not support classifier type: {}!".format(config.POLICY.CLASSIFIER_TYPE))
@@ -89,7 +97,7 @@ class PolicyResNetVLBERT(Module):
         
 
     def train(self, mode=True):
-        super(ResNetVLBERT, self).train(mode)
+        super(PolicyResNetVLBERT, self).train(mode)
         # turn some frozen layers to eval mode
         if self.image_feature_bn_eval:
             self.image_feature_extractor.bn_eval()
@@ -124,7 +132,7 @@ class PolicyResNetVLBERT(Module):
         q_end = 1 + question_mask.sum(1, keepdim=True)
         a_end = q_end + 1 + answer_mask.sum(1, keepdim=True)
         input_ids = torch.zeros((batch_size, max_len), dtype=question.dtype, device=question.device)
-        input_mask = torch.ones((batch_size, max_len), dtype=torch.uint8, device=question.device)
+        input_mask = torch.ones((batch_size, max_len), dtype=torch.bool, device=question.device)
         input_type_ids = torch.zeros((batch_size, max_len), dtype=question.dtype, device=question.device)
         text_tags = input_type_ids.new_zeros((batch_size, max_len))
         grid_i, grid_j = torch.meshgrid(torch.arange(batch_size, device=question.device),
