@@ -97,9 +97,8 @@ def train_net(args, config):
                 policy_model = DDP(policy_model, device_ids=[local_rank], output_device=local_rank)
 
         if rank == 0:
-            summary_parameters(policy_model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model,
-            summary_parameters(model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model,
-                               logger)
+            summary_parameters(policy_model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
+            summary_parameters(model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
             shutil.copy(args.cfg, final_output_path)
             shutil.copy(inspect.getfile(eval(config.MODULE)), final_output_path)
 
@@ -389,15 +388,15 @@ def train_net(args, config):
         elif config.POLICY.LR_SCHEDULE == 'triangle':
             policy_lr_scheduler = WarmupLinearSchedule(optimizer,
                                                 config.POLICY.WARMUP_STEPS if config.POLICY.WARMUP else 0,
-                                                t_total=int(config.POLICY.END_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS),
-                                                last_epoch=int(config.POLICY.BEGIN_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS)  - 1)
+                                                t_total=int(config.TRAIN.END_EPOCH * len(train_loader) / config.TRAIN.GRAD_ACCUMULATE_STEPS),
+                                                last_epoch=int(config.TRAIN.BEGIN_EPOCH * len(train_loader) / config.TRAIN.GRAD_ACCUMULATE_STEPS)  - 1)
         elif config.POLICY.LR_SCHEDULE == 'step':
-            policy_lr_iters = [int(epoch * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS) for epoch in config.POLICY.LR_STEP]
+            policy_lr_iters = [int(epoch * len(train_loader) / config.TRAIN.GRAD_ACCUMULATE_STEPS) for epoch in config.POLICY.LR_STEP]
             policy_lr_scheduler = WarmupMultiStepLR(optimizer, milestones=policy_lr_iters, gamma=config.POLICY.LR_FACTOR,
                                              warmup_factor=config.POLICY.WARMUP_FACTOR,
                                              warmup_iters=config.POLICY.WARMUP_STEPS if config.POLICY.WARMUP else 0,
                                              warmup_method=config.POLICY.WARMUP_METHOD,
-                                             last_epoch=int(config.POLICY.BEGIN_EPOCH * len(train_loader) / config.POLICY.GRAD_ACCUMULATE_STEPS)  - 1)
+                                             last_epoch=int(config.TRAIN.BEGIN_EPOCH * len(train_loader) / config.TRAIN.GRAD_ACCUMULATE_STEPS)  - 1)
         else:
             raise ValueError("Not support lr schedule: {}.".format(config.POLICY.LR_SCHEDULE))
 

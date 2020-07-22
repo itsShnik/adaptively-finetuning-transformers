@@ -183,7 +183,7 @@ def main():
         #            args.training_script,
         #            "--local_rank={}".format(local_rank)] + args.training_script_args
 
-        cmd = [sys.executable, "-u",
+        cmd = [sys.executable, "-u", "-W ignore",
                args.training_script] + args.training_script_args + ["--dist"]
 
         process = subprocess.Popen(cmd, env=current_env)

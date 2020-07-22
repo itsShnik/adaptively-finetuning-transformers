@@ -29,7 +29,7 @@ class BaseModel(nn.Module):
 
 
 class VisualLinguisticBert(BaseModel):
-    def __init__(self, config, language_pretrained_model_path=None, finetune_strategy='standard'):
+    def __init__(self, config, language_pretrained_model_path=None, finetune_strategy='standard', is_policy_net=False):
         super(VisualLinguisticBert, self).__init__(config)
 
         self.config = config
@@ -73,8 +73,11 @@ class VisualLinguisticBert(BaseModel):
             self.visual_ln_text.weight.data.fill_(self.config.visual_scale_text_init)
             self.visual_ln_object.weight.data.fill_(self.config.visual_scale_object_init)
 
+        # self.is_policy_net
+        self.is_policy_net = is_policy_net
+
         # load language pretrained model
-        if language_pretrained_model_path is not None:
+        if language_pretrained_model_path is not None and not is_policy_net:
             self.load_language_pretrained_model(language_pretrained_model_path)
 
         if config.word_embedding_frozen:
@@ -307,6 +310,11 @@ class VisualLinguisticBert(BaseModel):
         if len(unexpected_keys) > 0:
             print("Warnings: Unexpected keys: {}.".format(unexpected_keys))
         self.embedding_LayerNorm.load_state_dict(embedding_ln_pretrained_state_dict)
+        # preprocess encoder state dict for parallel blocks
+        if not self.is_policy_net:
+            for k in self.encoder.state_dict():
+                if 'parallel_' in str(k):
+                    encoder_pretrained_state_dict[k] = encoder_pretrained_state_dict[k.replace('parallel_', '')]
         self.encoder.load_state_dict(encoder_pretrained_state_dict)
         if self.config.with_pooler and len(pooler_pretrained_state_dict) > 0:
             self.pooler.load_state_dict(pooler_pretrained_state_dict)

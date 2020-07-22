@@ -147,7 +147,7 @@ class ResNetVLBERT(Module):
         q_end = 1 + question_mask.sum(1, keepdim=True)
         a_end = q_end + 1 + answer_mask.sum(1, keepdim=True)
         input_ids = torch.zeros((batch_size, max_len), dtype=question.dtype, device=question.device)
-        input_mask = torch.ones((batch_size, max_len), dtype=torch.uint8, device=question.device)
+        input_mask = torch.ones((batch_size, max_len), dtype=torch.bool, device=question.device)
         input_type_ids = torch.zeros((batch_size, max_len), dtype=question.dtype, device=question.device)
         text_tags = input_type_ids.new_zeros((batch_size, max_len))
         grid_i, grid_j = torch.meshgrid(torch.arange(batch_size, device=question.device),
