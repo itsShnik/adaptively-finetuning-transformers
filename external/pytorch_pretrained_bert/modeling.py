@@ -268,6 +268,8 @@ class BertEmbeddings(nn.Module):
 class BertSelfAttention(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super(BertSelfAttention, self).__init__()
+        # self.finetune_strategy
+        self.finetune_strategy = finetune_strategy
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
@@ -307,36 +309,114 @@ class BertSelfAttention(nn.Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, attention_mask, output_attention_probs=False):
-        mixed_query_layer = self.query(hidden_states)
-        mixed_key_layer = self.key(hidden_states)
-        mixed_value_layer = self.value(hidden_states)
+    def forward(self, hidden_states, attention_mask, output_attention_probs=False, policy=None, current_index=None):
 
-        query_layer = self.transpose_for_scores(mixed_query_layer)
-        key_layer = self.transpose_for_scores(mixed_key_layer)
-        value_layer = self.transpose_for_scores(mixed_value_layer)
+        if self.finetune_strategy == 'SpotTune':
+            mixed_query_layer = self.query(hidden_states)
+            mixed_key_layer = self.key(hidden_states)
+            mixed_value_layer = self.value(hidden_states)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-        attention_scores = attention_scores + attention_mask
+            # The shape of each layer will be: BS, AH, MT, HS
+            # BS: Batch Size
+            # AH: Number of Attention Heads
+            # MT: Max. Tokens
+            # HS: Attention Head Size
+            query_layer = self.transpose_for_scores(mixed_query_layer)
+            key_layer = self.transpose_for_scores(mixed_key_layer)
+            value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+            
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            attention_scores = attention_scores + attention_mask
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.dropout(attention_probs)
+            # Normalize the attention scores to probabilities.
+            attention_probs = nn.Softmax(dim=-1)(attention_scores)
 
-        context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
-        if output_attention_probs:
-            return context_layer, attention_probs
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            attention_probs = self.dropout(attention_probs)
+
+            # multiply attention probabilities by value
+            context_layer = torch.matmul(attention_probs, value_layer)
+            
+            # Now process the parallel part
+            parallel_mixed_query_layer = self.parallel_query(hidden_states)
+            parallel_mixed_key_layer = self.parallel_key(hidden_states)
+            parallel_mixed_value_layer = self.parallel_value(hidden_states)
+
+            # The shape of each layer will be: BS, AH, MT, HS
+            # BS: Batch Size
+            # AH: Number of Attention Heads
+            # MT: Max. Tokens
+            # HS: Attention Head Size
+            parallel_query_layer = self.transpose_for_scores(parallel_mixed_query_layer)
+            parallel_key_layer = self.transpose_for_scores(parallel_mixed_key_layer)
+            parallel_value_layer = self.transpose_for_scores(parallel_mixed_value_layer)
+
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            parallel_attention_scores = torch.matmul(parallel_query_layer, parallel_key_layer.transpose(-1, -2))
+            parallel_attention_scores = parallel_attention_scores / math.sqrt(self.attention_head_size)
+            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            parallel_attention_scores = parallel_attention_scores + attention_mask
+
+            # Normalize the attention scores to probabilities.
+            parallel_attention_probs = nn.Softmax(dim=-1)(parallel_attention_scores)
+
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            parallel_attention_probs = self.parallel_dropout(parallel_attention_probs)
+
+            # multiply attention probabilities by value
+            parallel_context_layer = torch.matmul(parallel_attention_probs, parallel_value_layer)
+
+            # Now take the decision for each of the heads here
+            action = policy[:,current_index:current_index+config.num_attention_heads].contiguous()
+            action_mask = action_mask.float().view(-1, config.num_attention_heads, 1, 1)
+            context_layer = action_mask * context_layer + (1-action_mask) * parallel_context_layer
+
+            # Now convert back multiple heads to the original shape of hidden layer
+            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+            new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+            context_layer = context_layer.view(*new_context_layer_shape)
+            current_index += config.num_attention_heads
+
+            # consider both attention probs
+            attention_probs = (attention_probs, parallel_attention_probs)
+
         else:
-            return context_layer
+            mixed_query_layer = self.query(hidden_states)
+            mixed_key_layer = self.key(hidden_states)
+            mixed_value_layer = self.value(hidden_states)
+
+            query_layer = self.transpose_for_scores(mixed_query_layer)
+            key_layer = self.transpose_for_scores(mixed_key_layer)
+            value_layer = self.transpose_for_scores(mixed_value_layer)
+
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            attention_scores = attention_scores + attention_mask
+
+            # Normalize the attention scores to probabilities.
+            attention_probs = nn.Softmax(dim=-1)(attention_scores)
+
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            attention_probs = self.dropout(attention_probs)
+
+            context_layer = torch.matmul(attention_probs, value_layer)
+            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+            new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+            context_layer = context_layer.view(*new_context_layer_shape)
+
+        if output_attention_probs:
+            return context_layer, current_index, attention_probs
+        else:
+            return context_layer, current_index
 
 
 class BertSelfOutput(nn.Module):
@@ -356,6 +436,10 @@ class BertSelfOutput(nn.Module):
 class BertAttention(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super(BertAttention, self).__init__()
+
+        # self.finetune_strategy
+        self.finetune_strategy = finetune_strategy
+
         # for bert self attention we need to parallelize deeper
         self.self = BertSelfAttention(config, finetune_strategy=finetune_strategy)
 
@@ -367,14 +451,28 @@ class BertAttention(nn.Module):
             for params in self.parallel_output.parameters():
                 params.requires_grad = False
 
-    def forward(self, input_tensor, attention_mask, output_attention_probs=False):
-        self_output = self.self(input_tensor, attention_mask, output_attention_probs=output_attention_probs)
+    def forward(self, input_tensor, attention_mask, output_attention_probs=False, policy=None, current_index=None):
         if output_attention_probs:
-            self_output, attention_probs = self_output
-        attention_output = self.output(self_output, input_tensor)
+            self_output, current_index, attention_probs = self.self(input_tensor, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+        else:
+            self_output, current_index = self.self(input_tensor, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+
+        if self.finetune_strategy == 'SpotTune':
+            # for this output layer, take the decision here
+            attention_output = self.output(self_output, input_tensor)
+            parallel_attention_output = self.parallel_output(self_output, input_tensor)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1)
+            attention_output = action_mask * attention_output + (1-action_mask) * attention_output 
+            current_index += 1
+
+        else:
+            # for every other strategy, do this normally
+            attention_output = self.output(self_output, input_tensor)
+
         if output_attention_probs:
-            return attention_output, attention_probs
-        return attention_output
+            return attention_output, current_index, attention_probs
+        return attention_output, current_index
 
 
 class BertIntermediate(nn.Module):
@@ -410,6 +508,9 @@ class BertLayer(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super(BertLayer, self).__init__()
 
+        # self.finetune strategy
+        self.finetune_strategy = finetune_strategy
+
         # for Bert Attention we have to finetune on head level
         # so we need to create a parallel block for each head
         # if the finetune strategy is spottune
@@ -430,16 +531,43 @@ class BertLayer(nn.Module):
             for params in self.parallel_output.parameters():
                 params.requires_grad = False
 
-    def forward(self, hidden_states, attention_mask, output_attention_probs=False):
-        attention_output = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs)
-        if output_attention_probs:
-            attention_output, attention_probs = attention_output
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        if output_attention_probs:
-            return layer_output, attention_probs
+    def forward(self, hidden_states, attention_mask, output_attention_probs=False, policy=None, current_index=None):
+        if self.finetune_strategy == 'SpotTune'
+            if output_attention_probs:
+                attention_output, current_index, attention_probs = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+            else:
+                attention_output, current_index = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+
+
+            # for the intermediate layer, take the decision here
+            intermediate_output = self.intermediate(attention_output)
+            parallel_intermediate_output = self.parllel_intermediate(attention_output)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1)
+            intermediate_output = action_mask * intermediate_output + (1-action_mask) * parallel_intermediate_output 
+            current_index += 1
+
+            # for the output layer also, take the decision here
+            layer_output = self.output(intermediate_output, attention_output)
+            parallel_layer_output = self.parallel_output(intermediate_output, attention_output)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1)
+            layer_output = action_mask * layer_output + (1-action_mask) * parallel_layer_output 
+            current_index += 1
+
         else:
-            return layer_output
+            # for all other strategies, compute this layer normally
+            if output_attention_probs:
+                attention_output, _, attention_probs = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+            else:
+                attention_output, _ = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+
+
+        # output attention probs
+        if output_attention_probs:
+            return layer_output, current_index, attention_probs
+        else:
+            return layer_output, current_index
 
 
 class BertEncoder(nn.Module):
@@ -448,6 +576,9 @@ class BertEncoder(nn.Module):
         # for SpotTune strategy, we will have to on finer levels
         layer = BertLayer(config, finetune_strategy=finetune_strategy)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
+
+        # self.finetune strategy
+        self.finetune strategy = finetune_strategy
 
         # for SpotTune Block Strategy, we can create parallel module list here
         if finetune_strategy == 'SpotTune_Block':
@@ -461,15 +592,91 @@ class BertEncoder(nn.Module):
     def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True, output_attention_probs=False, policy=None):
         all_encoder_layers = []
         all_attention_probs = []
-        for layer_module in self.layer:
-            hidden_states = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs)
-            if output_attention_probs:
-                hidden_states, attention_probs = hidden_states
-                all_attention_probs.append(attention_probs)
-            if output_all_encoded_layers:
-                all_encoder_layers.append(hidden_states)
+
+        # since the policy vector contains the decision
+        # for all the blocks and layers, we need to keep an
+        # index counter to indicate that the slicing has to
+        # start from here
+        current_index = 0
+
+        # SpotTune Strategy
+        if self.finetune_strategy == 'SpotTune':
+            for layer_module in self.layer:
+                if output_attention_probs:
+                    hidden_states, current_index, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+                    all_attention_probs.append(attention_probs)
+                else:
+                    hidden_states, current_index = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+
+                # after we have gotten states from a block
+                if output_all_encoded_layers:
+                    all_encoder_layers.append(hidden_states)
+
+        elif self.finetune_strategy == 'SpotTune_Block':
+            for layer_module, parallel_layer_module in zip(self.layer, self.parallel_layer):
+                # if we have to output attention blocks
+                if output_attention_probs:
+                    # compute the main layer
+                    hidden_states, _, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # compute the parallel layer
+                    parallel_hidden_states, _, parallel_attention_probs = parallel_layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # Now take the decision on basis of policy
+                    action = policy[:, current_index].contiguous() 
+                    action_mask = action.float().view(-1, 1)
+
+                    hidden_states = action_mask * hidden_states + (1 - action_mask) * parallel_hidden_states
+
+                    # increment the current index by 1
+                    # since we used 1 decision
+                    current_index += 1
+
+                    # append both the attention probs (frozen + not frozen)
+                    all_attention_probs.append((attention_probs, parallel_attention_probs))
+
+                else:
+                    # compute the main layer
+                    hidden_states, _ = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # compute the parallel layer
+                    parallel_hidden_states, _ = parallel_layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # Now take the decision on basis of policy
+                    action = policy[:, current_index].contiguous() 
+                    action_mask = action.float().view(-1, 1)
+
+                    hidden_states = action_mask * hidden_states + (1 - action_mask) * parallel_hidden_states
+
+                    # increment the current index by 1
+                    # since we used 1 decision
+                    current_index += 1
+
+
+                # after we have gotten states from a block
+                if output_all_encoded_layers:
+                    all_encoder_layers.append(hidden_states)
+
+        elif self.finetune_strategy == 'standard':
+            for layer_module in self.layer: 
+                if output_attention_probs:
+                    hidden_states, _, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+                    all_attention_probs.append(attention_probs)
+                else:
+                    hidden_states, _, _ = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                # after we have gotten states from a block
+                if output_all_encoded_layers:
+                    all_encoder_layers.append(hidden_states)
+
+        else:
+            raise ValueError("Not supported finetuning strategy: {}!".format(finetune_strategy))
+
+        # check if we need to output all layers or just the last layer
         if not output_all_encoded_layers:
             all_encoder_layers.append(hidden_states)
+
+        # check if we need to output attention probs
         if output_attention_probs:
             return all_encoder_layers, all_attention_probs
         else:
