@@ -21,7 +21,7 @@ DATASET:
   APPEND_INDEX: false
   DATASET_PATH: './data/coco'
   ROOT_PATH: './'
-  TRAIN_IMAGE_SET: 'train2014+val2014'
+  TRAIN_IMAGE_SET: 'train2014'
   VAL_IMAGE_SET: 'val2014'
   TEST_IMAGE_SET: 'test2015'
   ADD_IMAGE_AS_A_BOX: true
@@ -137,7 +137,7 @@ POLICY:
     hidden_size: 768
     num_hidden_layers: 2
     num_attention_heads: 12
-    intermediate_size: 256
+    intermediate_size: 512
     hidden_act: "gelu"
     hidden_dropout_prob: 0.1
     attention_probs_dropout_prob: 0.1
@@ -152,12 +152,12 @@ POLICY:
   CLASSIFIER_TYPE: "mlm"
   CLASSIFIER_PRETRAINED: true
   CLASSIFIER_DROPOUT: 0.1
-  OUTPUT_SIZE: 144
+  OUTPUT_SIZE: 360
 
 TRAIN:
   SHUFFLE: true
   FLIP_PROB: 0.5
-  BATCH_IMAGES: 64
+  BATCH_IMAGES: 16
   ASPECT_GROUPING: false
   RESUME: false
   AUTO_RESUME: true
@@ -178,10 +178,10 @@ TRAIN:
 VAL:
   SHUFFLE: false
   FLIP_PROB: 0
-  BATCH_IMAGES: 64
+  BATCH_IMAGES: 16
 
 TEST:
   SHUFFLE: false
   FLIP_PROB: 0
   TEST_EPOCH: 0
-  BATCH_IMAGES: 64
+  BATCH_IMAGES: 16

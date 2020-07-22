@@ -18,7 +18,7 @@ _C.CHECKPOINT_FREQUENT = 1
 _C.MODEL_PREFIX = ''
 _C.NUM_WORKERS_PER_GPU = 4
 _C.SCALES = ()
-_C.FINETUNE_STRATEGY = 'standard'
+_C.FINETUNE_STRATEGY = 'SpotTune'
 
 # ------------------------------------------------------------------------------------- #
 # Common dataset options
@@ -223,7 +223,7 @@ _C.POLICY.CLASSIFIER_DROPOUT = 0.1
 _C.POLICY.CLASSIFIER_SIGMOID = False
 _C.POLICY.CLASSIFIER_SIGMOID_LOSS_POSITIVE_WEIGHT = 1.0
 # Number of blocks to freeze
-__C.POLICY.OUTPUT_SIZE = 144
+_C.POLICY.OUTPUT_SIZE = 180
 
 
 # ------------------------------------------------------------------------------------- #
