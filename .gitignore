@@ -11,3 +11,7 @@ model/pretrained_model/bert-base-uncased/
 model/pretrained_model/bert-large-uncased/
 model/pretrained_model/resnet101-pt-vgbua-0000.model
 model/pretrained_model/vl-bert-base-prec.model
+
+# cache and output
+cache/*
+output/*
