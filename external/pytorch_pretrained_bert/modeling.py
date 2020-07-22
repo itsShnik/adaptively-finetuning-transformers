@@ -266,7 +266,7 @@ class BertEmbeddings(nn.Module):
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super(BertSelfAttention, self).__init__()
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
@@ -281,6 +281,26 @@ class BertSelfAttention(nn.Module):
         self.value = nn.Linear(config.hidden_size, self.all_head_size)
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+        if finetune_strategy ==  'SpotTune':
+            self.parallel_query = nn.Linear(config.hidden_size, self.all_head_size)
+            self.parallel_key = nn.Linear(config.hidden_size, self.all_head_size)
+            self.parallel_value = nn.Linear(config.hidden_size, self.all_head_size)
+
+            self.parallel_dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+            # probably, I will have to change the implementation of multi head attention
+            # in the forward pass, after transpose for scores, use the spottune formula
+            # in fact, there can be two versions here
+
+            for params in self.parallel_query.parameters():
+                params.requires_grad = False
+            for params in self.parallel_key.parameters():
+                params.requires_grad = False
+            for params in self.parallel_value.parameters():
+                params.requires_grad = False
+            for params in self.parallel_dropout.parameters():
+                params.requires_grad = False
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -334,10 +354,18 @@ class BertSelfOutput(nn.Module):
 
 
 class BertAttention(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super(BertAttention, self).__init__()
-        self.self = BertSelfAttention(config)
+        # for bert self attention we need to parallelize deeper
+        self.self = BertSelfAttention(config, finetune_strategy=finetune_strategy)
+
+        # for bert self output we can parallelize here only
         self.output = BertSelfOutput(config)
+
+        if finetune_strategy == 'SpotTune':
+            self.parallel_output = BertSelfOutput(config)
+            for params in self.parallel_output.parameters():
+                params.requires_grad = False
 
     def forward(self, input_tensor, attention_mask, output_attention_probs=False):
         self_output = self.self(input_tensor, attention_mask, output_attention_probs=output_attention_probs)
@@ -379,11 +407,28 @@ class BertOutput(nn.Module):
 
 
 class BertLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super(BertLayer, self).__init__()
-        self.attention = BertAttention(config)
+
+        # for Bert Attention we have to finetune on head level
+        # so we need to create a parallel block for each head
+        # if the finetune strategy is spottune
+        self.attention = BertAttention(config, finetune_strategy=finetune_strategy)
+
+        # for intermediate and output, we have to finetune on 
+        # layer level, so just create parallel blocks here
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
+
+        if finetune_strategy == 'SpotTune':
+            self.parallel_intermediate = BertIntermediate(config)
+            self.parallel_output = BertOutput(config)
+
+            # freeze the parameters from parallel blocks
+            for params in self.parallel_intermediate.parameters():
+                params.requires_grad = False
+            for params in self.parallel_output.parameters():
+                params.requires_grad = False
 
     def forward(self, hidden_states, attention_mask, output_attention_probs=False):
         attention_output = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs)
@@ -398,12 +443,22 @@ class BertLayer(nn.Module):
 
 
 class BertEncoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super(BertEncoder, self).__init__()
-        layer = BertLayer(config)
+        # for SpotTune strategy, we will have to on finer levels
+        layer = BertLayer(config, finetune_strategy=finetune_strategy)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True, output_attention_probs=False):
+        # for SpotTune Block Strategy, we can create parallel module list here
+        if finetune_strategy == 'SpotTune_Block':
+            parallel_layer = BertLayer(config)
+            self.parallel_layer = nn.ModuleList([copy.deepcopy(parallel_layer) for _ in range(config.num_hidden_layers)])
+
+            # freeze the parameters in this parallel layer
+            for params in self.parallel_layer.parameters():
+                params.requires_grad = False
+
+    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True, output_attention_probs=False, policy=None):
         all_encoder_layers = []
         all_attention_probs = []
         for layer_module in self.layer:
