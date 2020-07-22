@@ -29,7 +29,7 @@ class BaseModel(nn.Module):
 
 
 class VisualLinguisticBert(BaseModel):
-    def __init__(self, config, language_pretrained_model_path=None):
+    def __init__(self, config, language_pretrained_model_path=None, finetune_strategy='standard'):
         super(VisualLinguisticBert, self).__init__(config)
 
         self.config = config
@@ -62,7 +62,7 @@ class VisualLinguisticBert(BaseModel):
                                                requires_grad=True)
             self.register_parameter('visual_scale_object', visual_scale_object)
 
-        self.encoder = BertEncoder(config)
+        self.encoder = BertEncoder(config, finetune_strategy=finetune_strategy)
 
         if self.config.with_pooler:
             self.pooler = BertPooler(config)
@@ -101,7 +101,8 @@ class VisualLinguisticBert(BaseModel):
                 object_mask,
                 output_all_encoded_layers=True,
                 output_text_and_object_separately=False,
-                output_attention_probs=False):
+                output_attention_probs=False,
+                policy=None):
 
         # get seamless concatenate embeddings and mask
         embedding_output, attention_mask, text_mask_new, object_mask_new = self.embedding(text_input_ids,
@@ -132,12 +133,14 @@ class VisualLinguisticBert(BaseModel):
             encoded_layers, attention_probs = self.encoder(embedding_output,
                                                            extended_attention_mask,
                                                            output_all_encoded_layers=output_all_encoded_layers,
-                                                           output_attention_probs=output_attention_probs)
+                                                           output_attention_probs=output_attention_probs,
+                                                           policy=policy)
         else:
             encoded_layers = self.encoder(embedding_output,
                                           extended_attention_mask,
                                           output_all_encoded_layers=output_all_encoded_layers,
-                                          output_attention_probs=output_attention_probs)
+                                          output_attention_probs=output_attention_probs,
+                                          policy=policy)
         sequence_output = encoded_layers[-1]
         pooled_output = self.pooler(sequence_output) if self.config.with_pooler else None
         if not output_all_encoded_layers:

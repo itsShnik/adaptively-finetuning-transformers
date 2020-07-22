@@ -18,7 +18,7 @@ _C.CHECKPOINT_FREQUENT = 1
 _C.MODEL_PREFIX = ''
 _C.NUM_WORKERS_PER_GPU = 4
 _C.SCALES = ()
-_C.FINETUNE_STRATEGY = ''
+_C.FINETUNE_STRATEGY = 'standard'
 
 # ------------------------------------------------------------------------------------- #
 # Common dataset options
