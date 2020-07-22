@@ -139,7 +139,8 @@ class VisualLinguisticBert(BaseModel):
             encoded_layers = self.encoder(embedding_output,
                                           extended_attention_mask,
                                           output_all_encoded_layers=output_all_encoded_layers,
-                                          output_attention_probs=output_attention_probs)
+                                          output_attention_probs=output_attention_probs,
+                                          policy=policy)
         sequence_output = encoded_layers[-1]
         pooled_output = self.pooler(sequence_output) if self.config.with_pooler else None
         if not output_all_encoded_layers:
