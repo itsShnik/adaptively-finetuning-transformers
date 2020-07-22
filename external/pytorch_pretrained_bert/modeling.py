@@ -373,15 +373,15 @@ class BertSelfAttention(nn.Module):
             parallel_context_layer = torch.matmul(parallel_attention_probs, parallel_value_layer)
 
             # Now take the decision for each of the heads here
-            action = policy[:,current_index:current_index+config.num_attention_heads].contiguous()
-            action_mask = action_mask.float().view(-1, config.num_attention_heads, 1, 1)
+            action = policy[:,current_index:current_index+self.num_attention_heads].contiguous()
+            action_mask = action.float().view(-1, self.num_attention_heads, 1, 1)
             context_layer = action_mask * context_layer + (1-action_mask) * parallel_context_layer
 
             # Now convert back multiple heads to the original shape of hidden layer
             context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
             new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
             context_layer = context_layer.view(*new_context_layer_shape)
-            current_index += config.num_attention_heads
+            current_index += self.num_attention_heads
 
             # consider both attention probs
             attention_probs = (attention_probs, parallel_attention_probs)
@@ -462,7 +462,7 @@ class BertAttention(nn.Module):
             attention_output = self.output(self_output, input_tensor)
             parallel_attention_output = self.parallel_output(self_output, input_tensor)
             action = policy[:,current_index].contiguous()
-            action_mask = action.float().view(-1, 1)
+            action_mask = action.float().view(-1, 1, 1)
             attention_output = action_mask * attention_output + (1-action_mask) * attention_output 
             current_index += 1
 
@@ -532,7 +532,7 @@ class BertLayer(nn.Module):
                 params.requires_grad = False
 
     def forward(self, hidden_states, attention_mask, output_attention_probs=False, policy=None, current_index=None):
-        if self.finetune_strategy == 'SpotTune'
+        if self.finetune_strategy == 'SpotTune':
             if output_attention_probs:
                 attention_output, current_index, attention_probs = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
             else:
@@ -541,9 +541,9 @@ class BertLayer(nn.Module):
 
             # for the intermediate layer, take the decision here
             intermediate_output = self.intermediate(attention_output)
-            parallel_intermediate_output = self.parllel_intermediate(attention_output)
+            parallel_intermediate_output = self.parallel_intermediate(attention_output)
             action = policy[:,current_index].contiguous()
-            action_mask = action.float().view(-1, 1)
+            action_mask = action.float().view(-1, 1, 1)
             intermediate_output = action_mask * intermediate_output + (1-action_mask) * parallel_intermediate_output 
             current_index += 1
 
@@ -551,7 +551,7 @@ class BertLayer(nn.Module):
             layer_output = self.output(intermediate_output, attention_output)
             parallel_layer_output = self.parallel_output(intermediate_output, attention_output)
             action = policy[:,current_index].contiguous()
-            action_mask = action.float().view(-1, 1)
+            action_mask = action.float().view(-1, 1, 1)
             layer_output = action_mask * layer_output + (1-action_mask) * parallel_layer_output 
             current_index += 1
 
@@ -561,6 +561,9 @@ class BertLayer(nn.Module):
                 attention_output, _, attention_probs = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
             else:
                 attention_output, _ = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+
+            intermediate_output = self.intermediate(attention_output)
+            layer_output = self.output(intermediate_output, attention_output)
 
 
         # output attention probs
@@ -573,12 +576,12 @@ class BertLayer(nn.Module):
 class BertEncoder(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super(BertEncoder, self).__init__()
+        # self.finetune strategy
+        self.finetune_strategy = finetune_strategy
+
         # for SpotTune strategy, we will have to on finer levels
         layer = BertLayer(config, finetune_strategy=finetune_strategy)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config.num_hidden_layers)])
-
-        # self.finetune strategy
-        self.finetune strategy = finetune_strategy
 
         # for SpotTune Block Strategy, we can create parallel module list here
         if finetune_strategy == 'SpotTune_Block':
@@ -663,7 +666,7 @@ class BertEncoder(nn.Module):
                     hidden_states, _, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
                     all_attention_probs.append(attention_probs)
                 else:
-                    hidden_states, _, _ = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+                    hidden_states, _ = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
 
                 # after we have gotten states from a block
                 if output_all_encoded_layers:
