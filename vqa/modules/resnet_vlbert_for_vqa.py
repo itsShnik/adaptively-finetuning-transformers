@@ -46,8 +46,9 @@ class ResNetVLBERT(Module):
         if language_pretrained_model_path is None:
             print("Warning: no pretrained language model found, training from scratch!!!")
 
+        # Also pass the finetuning strategy
         self.vlbert = VisualLinguisticBert(config.NETWORK.VLBERT,
-                                         language_pretrained_model_path=language_pretrained_model_path)
+                                         language_pretrained_model_path=language_pretrained_model_path, finetune_strategy=config.FINETUNE_STRATEGY)
 
         # self.hm_out = nn.Linear(config.NETWORK.VLBERT.hidden_size, config.NETWORK.VLBERT.hidden_size)
         # self.hi_out = nn.Linear(config.NETWORK.VLBERT.hidden_size, config.NETWORK.VLBERT.hidden_size)
@@ -231,7 +232,8 @@ class ResNetVLBERT(Module):
                                       text_mask,
                                       object_vl_embeddings,
                                       box_mask,
-                                      output_all_encoded_layers=False)
+                                      output_all_encoded_layers=False,
+                                      policy=policy)
         _batch_inds = torch.arange(question.shape[0], device=question.device)
 
         hm = hidden_states[_batch_inds, ans_pos]
