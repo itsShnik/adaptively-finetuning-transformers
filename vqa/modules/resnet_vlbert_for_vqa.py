@@ -263,7 +263,8 @@ class ResNetVLBERT(Module):
                           image,
                           boxes,
                           im_info,
-                          question):
+                          question,
+                          policy=None):
 
         ###########################################
 
@@ -322,7 +323,8 @@ class ResNetVLBERT(Module):
                                       text_mask,
                                       object_vl_embeddings,
                                       box_mask,
-                                      output_all_encoded_layers=False)
+                                      output_all_encoded_layers=False,
+                                      policy=policy)
         _batch_inds = torch.arange(question.shape[0], device=question.device)
 
         hm = hidden_states[_batch_inds, ans_pos]
