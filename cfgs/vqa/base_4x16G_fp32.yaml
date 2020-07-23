@@ -10,6 +10,7 @@ VAL_FREQUENT: 1
 CHECKPOINT_FREQUENT: 1
 MODEL_PREFIX: 'vl-bert_base_res101_vqa'
 NUM_WORKERS_PER_GPU: 4
+VERSION: 'spottune_trial'
 SCALES:
 - 600
 - 1000
@@ -31,7 +32,7 @@ DATASET:
   MASK_SIZE: 14
   BOXES: "10-100ada"
   USE_IMDB: false
-  TOY: false
+  TOY: true
   TOY_SAMPLES: 128
 
 NETWORK:

@@ -7,7 +7,7 @@ class Checkpoint(object):
         self.prefix = prefix
         self.frequent = frequent
 
-    def __call__(self, epoch_num, net, optimizer, writer, validation_monitor=None, policy_net=None, policy_optimizer=None):
+    def __call__(self, epoch_num, net, optimizer, writer, validation_monitor=None, policy_net=None, policy_optimizer=None, **kwargs):
         if (epoch_num + 1) % self.frequent == 0:
             param_name = '{}-{:04d}.model'.format(self.prefix, epoch_num)
             checkpoint_dict = dict()

@@ -19,6 +19,7 @@ _C.MODEL_PREFIX = ''
 _C.NUM_WORKERS_PER_GPU = 4
 _C.SCALES = ()
 _C.FINETUNE_STRATEGY = 'SpotTune'
+_C.VERSION = 'adaptive-finetune'
 
 # ------------------------------------------------------------------------------------- #
 # Common dataset options

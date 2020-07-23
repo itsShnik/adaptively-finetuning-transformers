@@ -3,6 +3,7 @@ import time
 from collections import namedtuple
 import torch
 from common.gumbel_softmax import gumbel_softmax
+import wandb
 
 try:
     from apex import amp
@@ -10,6 +11,10 @@ try:
 except ImportError:
     pass
     #raise ImportError("Please install apex from https://www.github.com/nvidia/apex if you want to use fp16.")
+
+# policy vector shapes
+PolicyVec = {'SpotTune':180,
+        'SpotTune_Block':12}
 
 # Parameter to pass to batch_end_callback
 BatchEndParam = namedtuple('BatchEndParams',
@@ -68,6 +73,7 @@ def train(net,
           epoch_end_callbacks=None,
           writer=None,
           validation_monitor=None,
+          visualization_plotter=None,
           fp16=False,
           clip_grad_norm=-1,
           gradient_accumulate_steps=1,
@@ -79,6 +85,10 @@ def train(net,
     assert isinstance(gradient_accumulate_steps, int) and gradient_accumulate_steps >= 1
 
     for epoch in range(begin_epoch, end_epoch):
+        if finetune_strategy in PolicyVec:
+            policy_save = torch.zeros(PolicyVec[finetune_strategy]).cpu()
+            policy_max = 0
+
         print('PROGRESS: %.2f%%' % (100.0 * epoch / end_epoch))
 
         # set epoch as random seed of sampler while distributed training
@@ -128,10 +138,12 @@ def train(net,
             forward_time = time.time()
 
             # if policy, find the probs
-            if finetune_strategy == 'SpotTune':
+            if finetune_strategy in PolicyVec:
                 policy_vector = policy_net(*batch)
                 policy_action = gumbel_softmax(policy_vector.view(policy_vector.size(0), -1, 2))
                 policy = policy_action[:,:,1]
+                policy_save = policy_save + policy.clone().detach().cpu().sum(0)
+                policy_max += policy.size(0)
                 outputs, loss = net(*batch, policy)
             else:
                 outputs, loss = net(*batch)
@@ -197,11 +209,14 @@ def train(net,
                     writer.add_scalar(tag='Train-Loss',
                                       scalar_value=float(loss.item()),
                                       global_step=global_steps)
+                    # log loss on wandb
+                    wandb.log({'Training Loss': float(loss.item())})
                     name, value = metrics.get()
                     for n, v in zip(name, value):
                         writer.add_scalar(tag='Train-' + n,
                                           scalar_value=v,
                                           global_step=global_steps)
+                        wandb.log({'Train {}'.format(n): v})
 
             metric_time = time.time() - metric_time
 
@@ -220,6 +235,8 @@ def train(net,
         # excute epoch_end_callbacks
         if validation_monitor is not None:
             validation_monitor(epoch, net, optimizer, writer, policy_net=policy_net, policy_optimizer=policy_optimizer)
+        if visualization_plotter is not None:
+            visualization_plotter(finetune_strategy, policy_save, policy_max, epoch)
         if epoch_end_callbacks is not None:
             _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor, policy_net=policy_net, policy_optimizer=policy_optimizer)
 
