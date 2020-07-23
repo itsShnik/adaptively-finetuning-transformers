@@ -15,3 +15,12 @@ model/pretrained_model/vl-bert-base-prec.model
 # cache and output
 cache/*
 output/*
+
+# swp files
+*.swp
+*.swo
+*.swn
+
+# wandb
+wandb/*
+visualizations/*
