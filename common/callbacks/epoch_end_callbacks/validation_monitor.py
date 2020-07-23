@@ -1,5 +1,6 @@
 import logging
 import shutil
+import wandb
 
 
 class ValidationMonitor(object):
@@ -39,6 +40,7 @@ class ValidationMonitor(object):
                 writer.add_scalar(tag='Val-' + n,
                                   scalar_value=v,
                                   global_step=epoch_num + 1)
+                wandb.log({'Val {}'.format(n):v})
         logging.info(s)
         print(s)
 
