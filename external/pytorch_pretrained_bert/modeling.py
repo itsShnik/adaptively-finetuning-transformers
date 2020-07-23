@@ -627,7 +627,7 @@ class BertEncoder(nn.Module):
 
                     # Now take the decision on basis of policy
                     action = policy[:, current_index].contiguous() 
-                    action_mask = action.float().view(-1, 1)
+                    action_mask = action.float().view(-1, 1, 1)
 
                     hidden_states = action_mask * hidden_states + (1 - action_mask) * parallel_hidden_states
 
@@ -647,7 +647,7 @@ class BertEncoder(nn.Module):
 
                     # Now take the decision on basis of policy
                     action = policy[:, current_index].contiguous() 
-                    action_mask = action.float().view(-1, 1)
+                    action_mask = action.float().view(-1, 1, 1)
 
                     hidden_states = action_mask * hidden_states + (1 - action_mask) * parallel_hidden_states
 
