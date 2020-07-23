@@ -49,6 +49,9 @@ _C.DATASET.QA2R_NOQ = False
 _C.DATASET.QA2R_AUG = False
 _C.DATASET.BOXES = "36"   # "36" or "10-100ada"
 _C.DATASET.USE_IMDB = True
+_C.DATASET.TOY = False
+_C.DATASET.TOY_SAMPLES = 128
+
 
 # ------------------------------------------------------------------------------------- #
 # Common network options
