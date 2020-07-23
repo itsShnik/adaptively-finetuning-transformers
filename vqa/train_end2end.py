@@ -8,6 +8,8 @@ from vqa.function.config import config, update_config
 from vqa.function.train import train_net
 from vqa.function.test import test_net
 
+import wandb
+
 
 def parse_args():
     parser = argparse.ArgumentParser('Train Cognition Network')
@@ -51,6 +53,10 @@ def parse_args():
 
 def main():
     args, config = parse_args()
+
+    # initialize on wandb
+    wandb.init(project='adaptive-finetuning', name=config.VERSION, config=config)
+
     rank, model = train_net(args, config)
     if args.do_test and (rank is None or rank == 0):
         test_net(args, config)
