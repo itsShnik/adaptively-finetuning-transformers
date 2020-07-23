@@ -31,6 +31,8 @@ DATASET:
   MASK_SIZE: 14
   BOXES: "10-100ada"
   USE_IMDB: false
+  TOY: false
+  TOY_SAMPLES: 128
 
 NETWORK:
   PARTIAL_PRETRAIN: "./model/pretrained_model/vl-bert-base-prec.model"
@@ -160,7 +162,7 @@ TRAIN:
   BATCH_IMAGES: 16
   ASPECT_GROUPING: false
   RESUME: false
-  AUTO_RESUME: true
+  AUTO_RESUME: false
   BEGIN_EPOCH: 0
   END_EPOCH: 5
   OPTIMIZER: 'AdamW'
