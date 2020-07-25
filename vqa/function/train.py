@@ -104,7 +104,8 @@ def train_net(args, config):
                 policy_model = DDP(policy_model, device_ids=[local_rank], output_device=local_rank)
 
         if rank == 0:
-            summary_parameters(policy_model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
+            if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+                summary_parameters(policy_model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
             summary_parameters(model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
             shutil.copy(args.cfg, final_output_path)
             shutil.copy(inspect.getfile(eval(config.MODULE)), final_output_path)
