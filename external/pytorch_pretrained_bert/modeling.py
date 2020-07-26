@@ -592,6 +592,23 @@ class BertEncoder(nn.Module):
             for params in self.parallel_layer.parameters():
                 params.requires_grad = False
 
+        elif finetune_strategy == 'pretrained_frozen':
+            # freeze the pretrained parameters
+            for params in self.layer.parameters():
+                params.requires_grad = False
+
+        elif finetune_strategy.startswith('last_'):
+            # freeze all except last k: last_k
+            for i in range(len(self.layer)-(int(finetune_strategy.split('_')[-1]))):
+                for params in self.layer[i].parameters():
+                    params.requires_grad = False
+
+        elif finetune_strategy == 'specific_k':
+            # freeze specific layers
+            for i in config.FROZEN_LAYERS:
+                for params in self.layer[i].parameters():
+                    params.requires_grad = False
+
     def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True, output_attention_probs=False, policy=None):
         all_encoder_layers = []
         all_attention_probs = []
@@ -660,7 +677,8 @@ class BertEncoder(nn.Module):
                 if output_all_encoded_layers:
                     all_encoder_layers.append(hidden_states)
 
-        elif self.finetune_strategy == 'standard':
+        else:
+            # for all other strategies, we use standard procedure
             for layer_module in self.layer: 
                 if output_attention_probs:
                     hidden_states, _, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
@@ -672,8 +690,6 @@ class BertEncoder(nn.Module):
                 if output_all_encoded_layers:
                     all_encoder_layers.append(hidden_states)
 
-        else:
-            raise ValueError("Not supported finetuning strategy: {}!".format(finetune_strategy))
 
         # check if we need to output all layers or just the last layer
         if not output_all_encoded_layers:
