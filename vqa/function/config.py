@@ -122,6 +122,8 @@ _C.NETWORK.VLBERT.visual_ln = False
 _C.NETWORK.VLBERT.object_word_embed_mode = 2
 _C.NETWORK.VLBERT.with_pooler = False
 _C.NETWORK.VLBERT.position_padding_idx = -1
+# for some finetuning strategies
+_C.NETWORK.VLBERT.FROZEN_LAYERS = []
 
 _C.NETWORK.CLASSIFIER_TYPE = "2fc"    # 2fc or 1fc or mlm
 _C.NETWORK.CLASSIFIER_PRETRAINED = False
