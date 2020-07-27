@@ -49,7 +49,7 @@ class VQA_CP(Dataset):
         :param aspect_grouping: whether to group images via their aspect
         :param kwargs:
         """
-        super(VQA, self).__init__()
+        super(VQA_CP, self).__init__()
 
         assert not cache_mode, 'currently not support cache mode!'
 
@@ -75,12 +75,12 @@ class VQA_CP(Dataset):
         if boxes == "36":
             precomputed_boxes = {
                 'train': ("vgbua_res101_precomputed", "{}_resnet101_faster_rcnn_genome_36"),
-                'test': ("vgbua_res101_precomputed", "{}_resnet101_faster_rcnn_genome_36"),
+                'val': ("vgbua_res101_precomputed", "{}_resnet101_faster_rcnn_genome_36"),
             }
         elif boxes == "10-100ada":
             precomputed_boxes = {
                 'train': ("vgbua_res101_precomputed", "{}_resnet101_faster_rcnn_genome"),
-                'test': ("vgbua_res101_precomputed", "{}_resnet101_faster_rcnn_genome"),
+                'val': ("vgbua_res101_precomputed", "{}_resnet101_faster_rcnn_genome"),
             }
         else:
             raise ValueError("Not support boxes: {}!".format(boxes))
@@ -109,8 +109,7 @@ class VQA_CP(Dataset):
         with open(answer_vocab_file, 'r', encoding='utf8') as f:
             self.answer_vocab = [w.lower().strip().strip('\r').strip('\n').strip('\r') for w in f.readlines()]
             self.answer_vocab = list(filter(lambda x: x != '', self.answer_vocab))
-            if not self.use_imdb:
-                self.answer_vocab = [self.processPunctuation(w) for w in self.answer_vocab]
+            self.answer_vocab = [self.processPunctuation(w) for w in self.answer_vocab]
 
         # The config.DATA.TRAIN_IMAGE_SET and config.DATA.VAL_IMAGE_SET have
         # a little different use here, it indicates the mode 'train' or 'val'
@@ -206,10 +205,7 @@ class VQA_CP(Dataset):
         boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(min=0, max=h - 1)
 
         # flip: 'left' -> 'right', 'right' -> 'left'
-        if self.use_imdb:
-            q_tokens = idb['question_tokens']
-        else:
-            q_tokens = self.tokenizer.tokenize(idb['question'])
+        q_tokens = self.tokenizer.tokenize(idb['question'])
         if flipped:
             q_tokens = self.flip_tokens(q_tokens, verbose=False)
         if not self.test_mode:
@@ -221,11 +217,7 @@ class VQA_CP(Dataset):
             label = self.get_soft_target(answers)
 
         # question
-        if self.use_imdb:
-            q_str = ' '.join(q_tokens)
-            q_retokens = self.tokenizer.tokenize(q_str)
-        else:
-            q_retokens = q_tokens
+        q_retokens = q_tokens
         q_ids = self.tokenizer.convert_tokens_to_ids(q_retokens)
 
         # concat box feature to box
@@ -333,8 +325,8 @@ class VQA_CP(Dataset):
 
         for ann_file, q_file, coco_path, box_file \
                 in zip(self.ann_files, self.q_files, self.coco_datasets, self.precomputed_box_files):
-            qs = self._load_json(q_file)['questions']
-            anns = self._load_json(ann_file)['annotations'] if not self.test_mode else ([None] * len(qs))
+            qs = self._load_json(q_file)
+            anns = self._load_json(ann_file) if not self.test_mode else ([None] * len(qs))
 
             # we need to create 3 coco objects
             coco_train2014 = COCO(self.coco_dataset['train2014'])
@@ -356,8 +348,8 @@ class VQA_CP(Dataset):
                 idb = {'image_id': q['image_id'],
                        'image_fn': coco_path.format(q['coco_split'], q['coco_split'], q['image_id']),
                        'width': coco_obj.imgs[q['image_id']]['width'],
-                       'height': coco.imgs[q['image_id']]['height'],
-                       'box_fn': os.path.join(box_file, '{}.json'.format(box_dir, q['image_id'])),
+                       'height': coco_obj.imgs[q['image_id']]['height'],
+                       'box_fn': os.path.join(box_file.format(box_dir), '{}.json'.format(q['image_id'])),
                        'question_id': q['question_id'],
                        'question': q['question'],
                        'answers': [a['answer'] for a in ann['answers']] if not self.test_mode else None,
