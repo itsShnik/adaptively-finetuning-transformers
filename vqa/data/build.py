@@ -6,7 +6,7 @@ from .transforms.build import build_transforms
 from .collate_batch import BatchCollator
 import pprint
 
-DATASET_CATALOGS = {'vqa': VQA}
+DATASET_CATALOGS = {'vqa': VQA, 'vqa_cp': VQA_CP}
 
 
 def build_dataset(dataset_name, *args, **kwargs):
