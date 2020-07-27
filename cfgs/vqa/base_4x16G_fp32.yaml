@@ -3,14 +3,14 @@ RNG_SEED: 12345
 OUTPUT_PATH: './output/vl-bert/vqa'
 MODULE: ResNetVLBERT
 POLICY_MODULE: PolicyResNetVLBERT
-FINETUNE_STRATEGY: 'SpotTune'
+FINETUNE_STRATEGY: 'last_4'
 GPUS: '0,1,2,3'
 LOG_FREQUENT: 100
 VAL_FREQUENT: 1
 CHECKPOINT_FREQUENT: 1
 MODEL_PREFIX: 'vl-bert_base_res101_vqa'
 NUM_WORKERS_PER_GPU: 4
-VERSION: 'spottune_trial'
+VERSION: 'last_4'
 SCALES:
 - 600
 - 1000
@@ -32,7 +32,7 @@ DATASET:
   MASK_SIZE: 14
   BOXES: "10-100ada"
   USE_IMDB: false
-  TOY: true
+  TOY: false
   TOY_SAMPLES: 128
 
 NETWORK:
@@ -86,6 +86,7 @@ NETWORK:
     visual_scale_text_init: 0.0
     visual_scale_object_init: 0.0
     visual_ln: true
+    FROZEN_LAYERS: [2,3,9,10]
 
   CLASSIFIER_TYPE: "mlm"
   CLASSIFIER_PRETRAINED: true
@@ -155,7 +156,7 @@ POLICY:
   CLASSIFIER_TYPE: "mlm"
   CLASSIFIER_PRETRAINED: true
   CLASSIFIER_DROPOUT: 0.1
-  OUTPUT_SIZE: 360
+  OUTPUT_SIZE: 24
 
 TRAIN:
   SHUFFLE: true
@@ -165,7 +166,7 @@ TRAIN:
   RESUME: false
   AUTO_RESUME: false
   BEGIN_EPOCH: 0
-  END_EPOCH: 5
+  END_EPOCH: 10 
   OPTIMIZER: 'AdamW'
   CLIP_GRAD_NORM: 1.0
   LR: 6.25e-7
