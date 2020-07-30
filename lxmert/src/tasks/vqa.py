@@ -66,7 +66,8 @@ class VQA:
         if args.finetune_strategy in PolicyStrategies:
             self.policy_model = self.policy_model.cuda()
         if args.multiGPU:
-            self.model.policy_lxrt_encoder.multi_gpu()
+            self.model.lxrt_encoder.multi_gpu()
+            self.policy_model.policy_lxrt_encoder.multi_gpu()
 
         # Loss and Optimizer
         self.bce_loss = nn.BCEWithLogitsLoss()
