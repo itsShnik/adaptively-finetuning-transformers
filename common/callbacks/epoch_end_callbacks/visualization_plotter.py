@@ -31,8 +31,8 @@ class VisualizationPlotter:
             plt.title(f'SpotTune_Block_Epoch_{epoch}')
 
             # just pass this plt to wandb.log while integrating with wandb
-            plt.savefig('visualizations/epoch_{}.png'.format(epoch))
-            wandb.log({"SpotTune_Block Finetuning Fraction":plt}, step=epoch)
+            plt.savefig('visualizations/spottune_block_epoch_{}.png'.format(epoch))
+            wandb.log({"SpotTune_Block Finetuning Fraction Epoch {}".format(epoch):plt})
             plt.close()
 
         elif finetune_strategy == 'SpotTune':
@@ -53,6 +53,6 @@ class VisualizationPlotter:
             # use seaborn plots
             ax = sns.heatmap(policy, xticklabels=xlabels, yticklabels=ylabels, cmap=sns.cm.rocket_r)
             plt.sca(ax)
-            plt.savefig('visualizations/epoch_{}.png'.format(epoch))
-            wandb.log({'SpotTune Finetuning Fraction':wandb.Image(plt)}, step=epoch)
+            plt.savefig('visualizations/spottune_epoch_{}.png'.format(epoch))
+            wandb.log({'SpotTune Finetuning Fraction Epoch {}'.format(epoch):wandb.Image(plt)})
             plt.close()
