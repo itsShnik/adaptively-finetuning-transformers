@@ -7,6 +7,7 @@ import random
 import numpy as np
 import torch
 
+PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
 
 def get_optimizer(optim):
     # Bind the optimizer
@@ -88,11 +89,27 @@ def parse_args():
     parser.add_argument("--multiGPU", action='store_const', default=False, const=True)
     parser.add_argument("--numWorkers", dest='num_workers', default=0)
 
+    # Finetuning strategy config
+    parser.add_argument("--strategy", dest='finetuning_strategy', default='standard', type=str, help='Finetuning strategy for model' )
+
+    # Args related to policy net
+    parser.add_argument('--policy_llayers', default=2, type=int)
+    parser.add_argument('--policy_xlayers', default=1, type=int)
+    parser.add_argument('--policy_rlayers', default=1, type=int)
+
+    # optimizer for the poicy network
+    parser.add_argument('--policy_optim', default='sgd', type=str)
+    parser.add_argument('--policy_lr', type=float, default=1e-4)
+
     # Parse the arguments.
     args = parser.parse_args()
 
     # Bind optimizer class.
     args.optimizer = get_optimizer(args.optim)
+
+    # policy optim
+    if args.finetune_strategy in PolicyStrategies:
+        args.policy_optimizer = get_optimizer(args.policy_optim)
 
     # Set seeds
     torch.manual_seed(args.seed)
