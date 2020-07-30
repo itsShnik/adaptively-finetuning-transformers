@@ -1,2 +1,0 @@
-from .refcoco import RefCOCO
-
