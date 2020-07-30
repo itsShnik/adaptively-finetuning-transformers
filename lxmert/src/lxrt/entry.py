@@ -22,6 +22,7 @@ import torch.nn as nn
 
 from lxrt.tokenization import BertTokenizer
 from lxrt.modeling import LXRTFeatureExtraction as VisualBertForLXRFeature, VISUAL_CONFIG
+from lxrt.modeling import PolicyLXRTFeatureExtraction, POLICY_CONFIG
 
 
 class InputFeatures(object):
@@ -75,6 +76,11 @@ def set_visual_config(args):
     VISUAL_CONFIG.l_layers = args.llayers
     VISUAL_CONFIG.x_layers = args.xlayers
     VISUAL_CONFIG.r_layers = args.rlayers
+
+def set_policy_config(args):
+    POLICY_CONFIG.l_layers = args.policy_llayers
+    POLICY_CONFIG.x_layers = args.poicy_xlayers
+    POLICY_CONFIG.r_layers = args.poicy_rlayers
 
 
 class LXRTEncoder(nn.Module):
@@ -152,5 +158,49 @@ class LXRTEncoder(nn.Module):
         self.model.load_state_dict(state_dict, strict=False)
 
 
+class PolicyLXRTEncoder(nn.Module):
+    def __init__(self, args, max_seq_length, mode='x'):
+        super().__init__()
+        self.max_seq_length = max_seq_length
+        set_policy_config(args)
 
+        # Using the bert tokenizer
+        self.tokenizer = BertTokenizer.from_pretrained(
+            "bert-base-uncased",
+            do_lower_case=True
+        )
+
+        # Build LXRT Model
+        self.model = PolicyLXRTFeatureExtraction.from_pretrained(
+            "bert-base-uncased",
+            mode=mode
+        )
+
+        if args.from_scratch:
+            print("initializing all the weights")
+            self.model.apply(self.model.init_bert_weights)
+
+    def multi_gpu(self):
+        self.model = nn.DataParallel(self.model)
+
+    @property
+    def dim(self):
+        return 768
+
+    def forward(self, sents, feats, visual_attention_mask=None):
+        train_features = convert_sents_to_features(
+            sents, self.max_seq_length, self.tokenizer)
+
+        input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long).cuda()
+        input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long).cuda()
+        segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long).cuda()
+
+        output = self.model(input_ids, segment_ids, input_mask,
+                            visual_feats=feats,
+                            visual_attention_mask=visual_attention_mask)
+        return output
+
+    def save(self, path):
+        torch.save(self.model.state_dict(),
+                   os.path.join("%s_PolicyLXRT.pth" % path))
 
