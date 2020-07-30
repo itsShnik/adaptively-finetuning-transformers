@@ -13,8 +13,11 @@ from param import args
 from pretrain.qa_answer_table import load_lxmert_qa
 from tasks.vqa_model import VQAModel
 from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
+from policy.lxrt import PolicyLXRT
 
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
+
+PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
 
 
 def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataTuple:
@@ -47,6 +50,10 @@ class VQA:
         # Model
         self.model = VQAModel(self.train_tuple.dataset.num_answers)
 
+        # if finetune strategy is spottune
+        if args.finetune_strategy in PolicyStrategies:
+            self.policy_model = PolicyLXRT 
+
         # Load pre-trained weights
         if args.load_lxmert is not None:
             self.model.lxrt_encoder.load(args.load_lxmert)
@@ -56,8 +63,10 @@ class VQA:
         
         # GPU options
         self.model = self.model.cuda()
+        if args.finetune_strategy in PolicyStrategies:
+            self.policy_model = self.policy_model.cuda()
         if args.multiGPU:
-            self.model.lxrt_encoder.multi_gpu()
+            self.model.policy_lxrt_encoder.multi_gpu()
 
         # Loss and Optimizer
         self.bce_loss = nn.BCEWithLogitsLoss()
@@ -72,6 +81,10 @@ class VQA:
                                   t_total=t_total)
         else:
             self.optim = args.optimizer(self.model.parameters(), args.lr)
+
+        # Optimizer for policy net
+        if args.finetune_strategy in PolicyStrategies:
+            self.policy_optim = args.policy_optimizer(self.policy_model.parameters(), args.policy_lr)
         
         # Output Directory
         self.output = args.output
@@ -89,8 +102,20 @@ class VQA:
                 self.model.train()
                 self.optim.zero_grad()
 
+                if self.finetune_strategy in PolicyStrategies:
+                    self.policy_model.train()
+                    self.policy_optim.zero_grad()
+
                 feats, boxes, target = feats.cuda(), boxes.cuda(), target.cuda()
-                logit = self.model(feats, boxes, sent)
+
+                if args.finetune_strategy in PolicyStrategies:
+                    # calculate the policy vector here
+                    policy_vec = self.policy_model(feats, boxes, sent)
+                    #TODO: A gumbel softmax here
+                    logit = self.model(feats, boxes, sent, policy)
+                else:
+                    logit = self.model(feats, boxes, sent)
+
                 assert logit.dim() == target.dim() == 2
                 loss = self.bce_loss(logit, target)
                 loss = loss * logit.size(1)
@@ -98,6 +123,8 @@ class VQA:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
                 self.optim.step()
+                if args.finetune_strategy in PolicyStrategies:
+                    self.policy_optim.step()
 
                 score, label = logit.max(1)
                 for qid, l in zip(ques_id, label.cpu().numpy()):
