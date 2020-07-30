@@ -78,9 +78,9 @@ def set_visual_config(args):
     VISUAL_CONFIG.r_layers = args.rlayers
 
 def set_policy_config(args):
-    POLICY_CONFIG.l_layers = args.llayers
-    POLICY_CONFIG.x_layers = args.xlayers
-    POLICY_CONFIG.r_layers = args.rlayers
+    POLICY_CONFIG.l_layers = args.policy_llayers
+    POLICY_CONFIG.x_layers = args.poicy_xlayers
+    POLICY_CONFIG.r_layers = args.poicy_rlayers
 
 
 class LXRTEncoder(nn.Module):
