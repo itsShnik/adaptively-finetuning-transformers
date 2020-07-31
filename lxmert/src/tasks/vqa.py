@@ -15,6 +15,8 @@ from tasks.vqa_model import VQAModel
 from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
 from policy.lxrt import PolicyLXRT
 
+from gumbel_softmax import gumbel_softmax
+
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
 PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
@@ -112,7 +114,8 @@ class VQA:
                 if args.finetune_strategy in PolicyStrategies:
                     # calculate the policy vector here
                     policy_vec = self.policy_model(feats, boxes, sent)
-                    #TODO: A gumbel softmax here
+                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0)), -1, 2)
+                    policy = policy_action[:, :, 1]
                     logit = self.model(feats, boxes, sent, policy)
                 else:
                     logit = self.model(feats, boxes, sent)
@@ -160,13 +163,23 @@ class VQA:
         :return: A dict of question_id to answer.
         """
         self.model.eval()
+        if args.finetune_strategy in PolicyStrategies:
+            self.policy_model.eval()
         dset, loader, evaluator = eval_tuple
         quesid2ans = {}
         for i, datum_tuple in enumerate(loader):
             ques_id, feats, boxes, sent = datum_tuple[:4]   # Avoid seeing ground truth
             with torch.no_grad():
                 feats, boxes = feats.cuda(), boxes.cuda()
-                logit = self.model(feats, boxes, sent)
+                if args.finetune_strategy in PolicyStrategies:
+                    # calculate the policy vector here
+                    policy_vec = self.policy_model(feats, boxes, sent)
+                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0)), -1, 2)
+                    policy = policy_action[:, :, 1]
+                    logit = self.model(feats, boxes, sent, policy)
+                else:
+                    logit = self.model(feats, boxes, sent)
+
                 score, label = logit.max(1)
                 for qid, l in zip(ques_id, label.cpu().numpy()):
                     ans = dset.label2ans[l]
