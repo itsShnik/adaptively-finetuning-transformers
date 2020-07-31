@@ -17,6 +17,10 @@ from policy.lxrt import PolicyLXRT
 
 from gumbel_softmax import gumbel_softmax
 
+import wandb
+
+wandb.init(project='adaptive-finetuning-lxmert', name=args.version, config=args)
+
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
 PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
@@ -97,6 +101,10 @@ class VQA:
         dset, loader, evaluator = train_tuple
         iter_wrapper = (lambda x: tqdm(x, total=len(loader))) if args.tqdm else (lambda x: x)
 
+        wandb.watch(self.model, log='all')
+        if args.finetune_strategy in PolicyStrategies:
+            wandb.watch(self.policy_model, log='all')
+
         best_valid = 0.
         for epoch in range(args.epochs):
             quesid2ans = {}
@@ -124,6 +132,8 @@ class VQA:
                 loss = self.bce_loss(logit, target)
                 loss = loss * logit.size(1)
 
+                wandb.log({'Training Loss':loss})
+
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
                 self.optim.step()
@@ -135,7 +145,10 @@ class VQA:
                     ans = dset.label2ans[l]
                     quesid2ans[qid.item()] = ans
 
-            log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, evaluator.evaluate(quesid2ans) * 100.)
+            train_acc = evaluator.evaluate(quesid2ans) * 100.
+            log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, train_acc)
+
+            wandb.log({'Training Accuracy': train_acc})
 
             if self.valid_tuple is not None:  # Do Validation
                 valid_score = self.evaluate(eval_tuple)
@@ -145,6 +158,8 @@ class VQA:
 
                 log_str += "Epoch %d: Valid %0.2f\n" % (epoch, valid_score * 100.) + \
                            "Epoch %d: Best %0.2f\n" % (epoch, best_valid * 100.)
+
+                wandb.log({'Validation Accuracy': valid_score * 100.})
 
             print(log_str, end='')
 
