@@ -293,8 +293,9 @@ class BertEmbeddings(nn.Module):
 
 
 class BertAttention(nn.Module):
-    def __init__(self, config, ctx_dim=None):
+    def __init__(self, config, ctx_dim=None, finetune_strategy='standard'):
         super().__init__()
+        self.finetune_strategy = finetune_strategy
         if config.hidden_size % config.num_attention_heads != 0:
             raise ValueError(
                 "The hidden size (%d) is not a multiple of the number of attention "
@@ -312,39 +313,131 @@ class BertAttention(nn.Module):
 
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
+        if finetune_strategy ==  'SpotTune':
+            self.parallel_query = nn.Linear(config.hidden_size, self.all_head_size)
+            self.parallel_key = nn.Linear(ctx_dim, self.all_head_size)
+            self.parallel_value = nn.Linear(ctx_dim, self.all_head_size)
+
+            self.parallel_dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+            for params in self.parallel_query.parameters():
+                params.requires_grad = False
+            for params in self.parallel_key.parameters():
+                params.requires_grad = False
+            for params in self.parallel_value.parameters():
+                params.requires_grad = False
+            for params in self.parallel_dropout.parameters():
+                params.requires_grad = False
+
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, context, attention_mask=None):
-        mixed_query_layer = self.query(hidden_states)
-        mixed_key_layer = self.key(context)
-        mixed_value_layer = self.value(context)
+    def forward(self, hidden_states, context, attention_mask=None, policy=None, current_index=None):
+        if self.finetune_strategy == 'SpotTune':
+            mixed_query_layer = self.query(hidden_states)
+            mixed_key_layer = self.key(context)
+            mixed_value_layer = self.value(context)
 
-        query_layer = self.transpose_for_scores(mixed_query_layer)
-        key_layer = self.transpose_for_scores(mixed_key_layer)
-        value_layer = self.transpose_for_scores(mixed_value_layer)
+            # The shape of each layer will be: BS, AH, MT, HS
+            # BS: Batch Size
+            # AH: Number of Attention Heads
+            # MT: Max. Tokens
+            # HS: Attention Head Size
+            query_layer = self.transpose_for_scores(mixed_query_layer)
+            key_layer = self.transpose_for_scores(mixed_key_layer)
+            value_layer = self.transpose_for_scores(mixed_value_layer)
 
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
-        attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-        # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
-        if attention_mask is not None:
-            attention_scores = attention_scores + attention_mask
+            
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            if attention_mask is not None:
+                attention_scores = attention_scores + attention_mask
 
-        # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+            # Normalize the attention scores to probabilities.
+            attention_probs = nn.Softmax(dim=-1)(attention_scores)
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        attention_probs = self.dropout(attention_probs)
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            attention_probs = self.dropout(attention_probs)
 
-        context_layer = torch.matmul(attention_probs, value_layer)
-        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
-        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
-        context_layer = context_layer.view(*new_context_layer_shape)
-        return context_layer
+            # multiply attention probabilities by value
+            context_layer = torch.matmul(attention_probs, value_layer)
+            
+            # Now process the parallel part
+            parallel_mixed_query_layer = self.parallel_query(hidden_states)
+            parallel_mixed_key_layer = self.parallel_key(context)
+            parallel_mixed_value_layer = self.parallel_value(context)
+
+            # The shape of each layer will be: BS, AH, MT, HS
+            # BS: Batch Size
+            # AH: Number of Attention Heads
+            # MT: Max. Tokens
+            # HS: Attention Head Size
+            parallel_query_layer = self.transpose_for_scores(parallel_mixed_query_layer)
+            parallel_key_layer = self.transpose_for_scores(parallel_mixed_key_layer)
+            parallel_value_layer = self.transpose_for_scores(parallel_mixed_value_layer)
+
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            parallel_attention_scores = torch.matmul(parallel_query_layer, parallel_key_layer.transpose(-1, -2))
+            parallel_attention_scores = parallel_attention_scores / math.sqrt(self.attention_head_size)
+            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            if attention_mask is not None:
+                parallel_attention_scores = parallel_attention_scores + attention_mask
+
+            # Normalize the attention scores to probabilities.
+            parallel_attention_probs = nn.Softmax(dim=-1)(parallel_attention_scores)
+
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            parallel_attention_probs = self.parallel_dropout(parallel_attention_probs)
+
+            # multiply attention probabilities by value
+            parallel_context_layer = torch.matmul(parallel_attention_probs, parallel_value_layer)
+
+            # Now take the decision for each of the heads here
+            action = policy[:,current_index:current_index+self.num_attention_heads].contiguous()
+            action_mask = action.float().view(-1, self.num_attention_heads, 1, 1)
+            context_layer = action_mask * context_layer + (1-action_mask) * parallel_context_layer
+
+            # Now convert back multiple heads to the original shape of hidden layer
+            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+            new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+            context_layer = context_layer.view(*new_context_layer_shape)
+            current_index += self.num_attention_heads
+
+        else:
+            mixed_query_layer = self.query(hidden_states)
+            mixed_key_layer = self.key(context)
+            mixed_value_layer = self.value(context)
+
+            query_layer = self.transpose_for_scores(mixed_query_layer)
+            key_layer = self.transpose_for_scores(mixed_key_layer)
+            value_layer = self.transpose_for_scores(mixed_value_layer)
+
+            # Take the dot product between "query" and "key" to get the raw attention scores.
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / math.sqrt(self.attention_head_size)
+            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            if attention_mask is not None:
+                attention_scores = attention_scores + attention_mask
+
+            # Normalize the attention scores to probabilities.
+            attention_probs = nn.Softmax(dim=-1)(attention_scores)
+
+            # This is actually dropping out entire tokens to attend to, which might
+            # seem a bit unusual, but is taken from the original Transformer paper.
+            attention_probs = self.dropout(attention_probs)
+
+            context_layer = torch.matmul(attention_probs, value_layer)
+            context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+            new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+            context_layer = context_layer.view(*new_context_layer_shape)
+
+        return context_layer, current_index
 
 
 class BertAttOutput(nn.Module):
@@ -362,28 +455,59 @@ class BertAttOutput(nn.Module):
 
 
 class BertCrossattLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super().__init__()
-        self.att = BertAttention(config)
+        self.finetune_strategy = finetune_strategy
+        self.att = BertAttention(config, finetune_strategy)
         self.output = BertAttOutput(config)
 
-    def forward(self, input_tensor, ctx_tensor, ctx_att_mask=None):
-        output = self.att(input_tensor, ctx_tensor, ctx_att_mask)
+        # if spottune strategy, create a new parallel block
+        if finetune_strategy == 'SpotTune':
+            self.parallel_output = BertAttOutput(config)
+            for params in self.parallel_output.parameters():
+                params.requires_grad = False
+
+    def forward(self, input_tensor, ctx_tensor, ctx_att_mask=None, policy=None, current_index=None):
+        output, current_index = self.att(input_tensor, ctx_tensor, ctx_att_mask, policy=policy, current_index=current_index)
         attention_output = self.output(output, input_tensor)
-        return attention_output
+        if finetune_strategy == 'SpotTune':
+            parallel_attention_output = self.parallel_output(output, input_tensor)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            attention_output = action_mask * attention_output + (1-action_mask) * parallel_attention_output 
+            current_index += 1
+
+        return attention_output, current_index
 
 
 class BertSelfattLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super(BertSelfattLayer, self).__init__()
-        self.self = BertAttention(config)
+        self.finetune_strategy = finetune_strategy
+        self.self = BertAttention(config, finetune_strategy)
         self.output = BertAttOutput(config)
 
-    def forward(self, input_tensor, attention_mask):
+        if finetune_strategy == 'SpotTune':
+            self.parallel_output = BertAttOutput(config)
+            for params in self.parallel_output.parameters():
+                params.requires_grad = False
+
+    def forward(self, input_tensor, attention_mask, policy=None, current_index=None):
         # Self attention attends to itself, thus keys and querys are the same (input_tensor).
-        self_output = self.self(input_tensor, input_tensor, attention_mask)
-        attention_output = self.output(self_output, input_tensor)
-        return attention_output
+        self_output, current_index = self.self(input_tensor, input_tensor, attention_mask, policy=policy, current_index=current_index)
+
+        if self.finetune_strategy == 'SpotTune':
+            attention_output = self.output(self_output, input_tensor)
+            parallel_attention_output = self.parallel_output(self_output, input_tensor)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            attention_output = action_mask * attention_output + (1-action_mask) * parallel_attention_output 
+            current_index += 1
+        else:
+            attention_output = self.output(self_output, input_tensor)
+
+
+        return attention_output, current_index
 
 
 class BertIntermediate(nn.Module):
@@ -416,17 +540,46 @@ class BertOutput(nn.Module):
 
 
 class BertLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super(BertLayer, self).__init__()
-        self.attention = BertSelfattLayer(config)
+        self.finetune_strategy = finetune_strategy
+        self.attention = BertSelfattLayer(config, finetune_strategy=finetune_strategy)
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
 
-    def forward(self, hidden_states, attention_mask):
-        attention_output = self.attention(hidden_states, attention_mask)
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
+        if finetune_strategy == 'SpotTune':
+            self.parallel_intermediate = BertIntermediate(config)
+            self.parallel_output = BertOutput(config)
+
+            # Freeze the parameters
+            for params in self.parallel_intermediate.parameters():
+                params.requires_grad = False
+            for params in self.parallel_output.parameters():
+                params.requires_grad = False
+
+    def forward(self, hidden_states, attention_mask, policy=None, current_index=None):
+        attention_output, current_index = self.attention(hidden_states, attention_mask, policy=policy, current_index=current_index)
+
+        if self.finetune_strategy == 'SpotTune':
+            intermediate_output = self.intermediate(attention_output)
+            parallel_intermediate_output = self.parallel_intermediate(attention_output)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            intermediate_output = action_mask * intermediate_output + (1-action_mask) * parallel_intermediate_output 
+            current_index += 1
+
+            layer_output = self.output(intermediate_output, attention_output)
+            parallel_layer_output = self.parallel_output(intermediate_output, attention_output)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            layer_output = action_mask * layer_output + (1-action_mask) * parallel_layer_output 
+            current_index += 1
+
+        else:
+            intermediate_output = self.intermediate(attention_output)
+            layer_output = self.output(intermediate_output, attention_output)
+
+        return layer_output, current_index
 
 
 """
@@ -437,14 +590,14 @@ class BertLayer(nn.Module):
 
 
 class LXRTXLayer(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super().__init__()
         # The cross-attention Layer
-        self.visual_attention = BertCrossattLayer(config)
+        self.visual_attention = BertCrossattLayer(config, finetune_strategy)
 
         # Self-attention Layers
-        self.lang_self_att = BertSelfattLayer(config)
-        self.visn_self_att = BertSelfattLayer(config)
+        self.lang_self_att = BertSelfattLayer(config, finetune_strategy)
+        self.visn_self_att = BertSelfattLayer(config, finetune_strategy)
 
         # Intermediate and Output Layers (FFNs)
         self.lang_inter = BertIntermediate(config)
@@ -452,40 +605,88 @@ class LXRTXLayer(nn.Module):
         self.visn_inter = BertIntermediate(config)
         self.visn_output = BertOutput(config)
 
-    def cross_att(self, lang_input, lang_attention_mask, visn_input, visn_attention_mask):
+        if finetune_strategy == 'SpotTune':
+            # parallel intermediate and output layers
+            self.parallel_lang_inter = BertIntermediate(config)
+            self.parallel_lang_output = BertOutput(config)
+            self.parallel_visn_inter = BertIntermediate(config)
+            self.parallel_visn_output = BertOutput(config)
+
+            for params in self.parallel_lang_inter.parameters():
+                params.requires_grad = False
+            for params in self.parallel_lang_output.parameters():
+                params.requires_grad = False
+            for params in self.parallel_visn_inter.parameters():
+                params.requires_grad = False
+            for params in self.parallel_visn_output.parameters():
+                params.requires_grad = False
+
+    def cross_att(self, lang_input, lang_attention_mask, visn_input, visn_attention_mask, policy=None, current_index=None):
         # Cross Attention
-        lang_att_output = self.visual_attention(lang_input, visn_input, ctx_att_mask=visn_attention_mask)
-        visn_att_output = self.visual_attention(visn_input, lang_input, ctx_att_mask=lang_attention_mask)
-        return lang_att_output, visn_att_output
+        # since both layers are shared, 
+        # policy should be same in both
+        # to do this, we keep current_index same in both
+        # by not updating it in the first operation
 
-    def self_att(self, lang_input, lang_attention_mask, visn_input, visn_attention_mask):
+        lang_att_output, _ = self.visual_attention(lang_input, visn_input, ctx_att_mask=visn_attention_mask, policy=policy, current_index=current_index)
+        visn_att_output, current_index = self.visual_attention(visn_input, lang_input, ctx_att_mask=lang_attention_mask, policy=policy, current_index=current_index)
+        return lang_att_output, visn_att_output, current_index
+
+    def self_att(self, lang_input, lang_attention_mask, visn_input, visn_attention_mask, policy=None, current_index=None):
         # Self Attention
-        lang_att_output = self.lang_self_att(lang_input, lang_attention_mask)
-        visn_att_output = self.visn_self_att(visn_input, visn_attention_mask)
-        return lang_att_output, visn_att_output
+        lang_att_output, current_index = self.lang_self_att(lang_input, lang_attention_mask, policy=policy, current_index=current_index)
+        visn_att_output, current_index = self.visn_self_att(visn_input, visn_attention_mask, policy=policy, current_index=current_index)
+        return lang_att_output, visn_att_output, current_index
 
-    def output_fc(self, lang_input, visn_input):
+    def output_fc(self, lang_input, visn_input, policy=None, current_index=None):
         # FC layers
         lang_inter_output = self.lang_inter(lang_input)
+        if self.finetune_strategy == 'SpotTune':
+            parallel_lang_inter_output = self.parallel_lang_inter(lang_input)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            lang_inter_output = action_mask * lang_inter_output + (1-action_mask) * parallel_lang_inter_output 
+            current_index += 1
+
         visn_inter_output = self.visn_inter(visn_input)
+        if self.finetune_strategy == 'SpotTune':
+            parallel_visn_inter_output = self.parallel_visn_inter(lang_input)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            visn_inter_output = action_mask * visn_inter_output + (1-action_mask) * parallel_visn_inter_output 
+            current_index += 1
 
         # Layer output
         lang_output = self.lang_output(lang_inter_output, lang_input)
+        if self.finetune_strategy == 'SpotTune':
+            parallel_lang_output = self.parallel_lang_output(lang_inter_output, lang_input)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            lang_output = action_mask * lang_output + (1-action_mask) * parallel_lang_output 
+            current_index += 1
+
         visn_output = self.visn_output(visn_inter_output, visn_input)
-        return lang_output, visn_output
+        if self.finetune_strategy == 'SpotTune':
+            parallel_visn_output = self.parallel_visn_output(visn_inter_output, visn_input)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            visn_output = action_mask * visn_output + (1-action_mask) * parallel_visn_output 
+            current_index += 1
+
+        return lang_output, visn_output, current_index
 
     def forward(self, lang_feats, lang_attention_mask,
-                      visn_feats, visn_attention_mask):
+                      visn_feats, visn_attention_mask, policy=None, current_index=None):
         lang_att_output = lang_feats
         visn_att_output = visn_feats
 
-        lang_att_output, visn_att_output = self.cross_att(lang_att_output, lang_attention_mask,
-                                                          visn_att_output, visn_attention_mask)
-        lang_att_output, visn_att_output = self.self_att(lang_att_output, lang_attention_mask,
-                                                         visn_att_output, visn_attention_mask)
-        lang_output, visn_output = self.output_fc(lang_att_output, visn_att_output)
+        lang_att_output, visn_att_output, current_index = self.cross_att(lang_att_output, lang_attention_mask,
+                                                          visn_att_output, visn_attention_mask, policy=policy, current_index=current_index)
+        lang_att_output, visn_att_output, current_index = self.self_att(lang_att_output, lang_attention_mask,
+                                                         visn_att_output, visn_attention_mask, policy=policy, current_index=current_index)
+        lang_output, visn_output, current_index = self.output_fc(lang_att_output, visn_att_output, policy=policy, current_index=current_index)
 
-        return lang_output, visn_output
+        return lang_output, visn_output, current_index
 
 
 class VisualFeatEncoder(nn.Module):
@@ -518,8 +719,10 @@ class VisualFeatEncoder(nn.Module):
 
 
 class LXRTEncoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super().__init__()
+
+        self.finetune_strategy = finetune_strategy
 
         # Obj-level image embedding layer
         self.visn_fc = VisualFeatEncoder(config)
@@ -534,34 +737,118 @@ class LXRTEncoder(nn.Module):
         # Layers
         # Using self.layer instead of self.l_layer to support loading BERT weights.
         self.layer = nn.ModuleList(
-            [BertLayer(config) for _ in range(self.num_l_layers)]
+            [BertLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_l_layers)]
         )
         self.x_layers = nn.ModuleList(
-            [LXRTXLayer(config) for _ in range(self.num_x_layers)]
+            [LXRTXLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_x_layers)]
         )
         self.r_layers = nn.ModuleList(
-            [BertLayer(config) for _ in range(self.num_r_layers)]
+            [BertLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_r_layers)]
         )
 
+        # if strategy is spottune block
+        if finetune_strategy == 'SpotTune_Block':
+            self.parallel_layer = nn.ModuleList(
+                [BertLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_l_layers)]
+            )
+            self.parallel_x_layers = nn.ModuleList(
+                [LXRTXLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_x_layers)]
+            )
+            self.parallel_r_layers = nn.ModuleList(
+                [BertLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_r_layers)]
+            )
+
+            # Freeze these params
+            for params in self.parallel_layer.parameters():
+                params.requires_grad = False
+            for params in self.parallel_x_layers.parameters():
+                params.requires_grad = False
+            for params in self.parallel_r_layers.parameters():
+                params.requires_grad = False
+
     def forward(self, lang_feats, lang_attention_mask,
-                visn_feats, visn_attention_mask=None):
+                visn_feats, policy=None, visn_attention_mask=None):
         # Run visual embedding layer
         # Note: Word embedding layer was executed outside this module.
         #       Keep this design to allow loading BERT weights.
         visn_feats = self.visn_fc(visn_feats)
 
-        # Run language layers
-        for layer_module in self.layer:
-            lang_feats = layer_module(lang_feats, lang_attention_mask)
+        current_index = 0
 
-        # Run relational layers
-        for layer_module in self.r_layers:
-            visn_feats = layer_module(visn_feats, visn_attention_mask)
+        if self.finetune_strategy == 'SpotTune':
+            # Run language layers
+            for layer_module in self.layer:
+                lang_feats, current_index = layer_module(lang_feats, lang_attention_mask, policy=policy, current_index=current_index)
 
-        # Run cross-modality layers
-        for layer_module in self.x_layers:
-            lang_feats, visn_feats = layer_module(lang_feats, lang_attention_mask,
-                                                  visn_feats, visn_attention_mask)
+            # Run relational layers
+            for layer_module in self.r_layers:
+                visn_feats, current_index = layer_module(visn_feats, visn_attention_mask, policy=policy, current_index=current_index)
+
+            # Run cross-modality layers
+            for layer_module in self.x_layers:
+                lang_feats, visn_feats, current_index = layer_module(lang_feats, lang_attention_mask,
+                                                      visn_feats, visn_attention_mask, policy=policy, current_index=current_index)
+
+        elif self.finetune_strategy == 'SpotTune_Block':
+            # Run language layers
+            for layer_module, parallel_layer_module in zip(self.layer, self.parallel_layer):
+                lang_feats, _ = layer_module(lang_feats, lang_attention_mask)
+                parallel_lang_feats, _ = parallel_layer_module(lang_feats, lang_attention_mask)
+
+                # Now decide which one to take
+                action = policy[:, current_index].contiguous() 
+                action_mask = action.float().view(-1, 1, 1)
+
+                lang_feats = action_mask * lang_feats + (1-action_mask) * parallel_lang_feats
+
+                current_index += 1
+
+            for layer_module, parallel_layer_module in zip(self.r_layers, self.parallel_r_layers):
+                visn_feats, _ = layer_module(visn_feats, visn_attention_mask)
+                parallel_visn_feats, _ = parallel_layer_module(visn_feats, visn_attention_mask)
+
+                # Now decide which one to take
+                action = policy[:, current_index].contiguous() 
+                action_mask = action.float().view(-1, 1, 1)
+
+                visn_feats = action_mask * visn_feats + (1-action_mask) * parallel_visn_feats
+
+                current_index += 1
+
+            for layer_module, parallel_layer_module in zip(self.x_layers, self.parallel_x_layers):
+                lang_feats, visn_feats, _ = layer_module(lang_feats, lang_attention_mask, visn_feats, visn_attention_mask)
+                parallel_lang_feats, parallel_visn_feats, _ = parallel_layer_module(lang_feats, lang_attention_mask, visn_feats, visn_attention_mask)
+
+                # Now decide which one to take in lang feats
+                action = policy[:, current_index].contiguous() 
+                action_mask = action.float().view(-1, 1, 1)
+
+                lang_feats = action_mask * lang_feats + (1-action_mask) * parallel_lang_feats
+
+                current_index += 1
+
+                # Now decide which one to take
+                action = policy[:, current_index].contiguous() 
+                action_mask = action.float().view(-1, 1, 1)
+
+                visn_feats = action_mask * visn_feats + (1-action_mask) * parallel_visn_feats
+
+                current_index += 1
+
+        else:
+            # Run language layers
+            for layer_module in self.layer:
+                lang_feats, _ = layer_module(lang_feats, lang_attention_mask, policy=policy, current_index=None)
+
+            # Run relational layers
+            for layer_module in self.r_layers:
+                visn_feats, _ = layer_module(visn_feats, visn_attention_mask, policy=policy, current_index=None)
+
+            # Run cross-modality layers
+            for layer_module in self.x_layers:
+                lang_feats, visn_feats, _ = layer_module(lang_feats, lang_attention_mask,
+                                                      visn_feats, visn_attention_mask, policy=policy, current_index=None)
+
 
         return lang_feats, visn_feats
 
@@ -835,15 +1122,15 @@ class BertPreTrainedModel(nn.Module):
 class LXRTModel(BertPreTrainedModel):
     """LXRT Model."""
 
-    def __init__(self, config):
+    def __init__(self, config, finetune_strategy='standard'):
         super().__init__(config)
         self.embeddings = BertEmbeddings(config)
-        self.encoder = LXRTEncoder(config)
+        self.encoder = LXRTEncoder(config, finetune_strategy=finetune_strategy)
         self.pooler = BertPooler(config)
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None,
-                visual_feats=None, visual_attention_mask=None):
+                visual_feats=None, policy=None, visual_attention_mask=None):
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         if token_type_ids is None:
@@ -880,6 +1167,7 @@ class LXRTModel(BertPreTrainedModel):
             embedding_output,
             extended_attention_mask,
             visn_feats=visual_feats,
+            policy=policy,
             visn_attention_mask=extended_visual_attention_mask)
         pooled_output = self.pooler(lang_feats)
 
@@ -993,21 +1281,22 @@ class LXRTFeatureExtraction(BertPreTrainedModel):
     """
     BERT model for classification.
     """
-    def __init__(self, config, mode='lxr'):
+    def __init__(self, config, mode='lxr', finetune_strategy='standard'):
         """
 
         :param config:
         :param mode:  Number of visual layers
         """
         super().__init__(config)
-        self.bert = LXRTModel(config)
+        self.bert = LXRTModel(config, finetune_strategy=finetune_strategy)
         self.mode = mode
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, visual_feats=None,
-                visual_attention_mask=None):
+                policy=None, visual_attention_mask=None):
         feat_seq, pooled_output = self.bert(input_ids, token_type_ids, attention_mask,
                                             visual_feats=visual_feats,
+                                            policy=policy,
                                             visual_attention_mask=visual_attention_mask)
         if 'x' == self.mode:
             return pooled_output
