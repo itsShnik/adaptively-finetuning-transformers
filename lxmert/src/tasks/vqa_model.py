@@ -44,7 +44,7 @@ class VQAModel(nn.Module):
         :param leng: (b,) Type -- int numpy array
         :return: (b, num_answer) The logit of each answers.
         """
-        x = self.lxrt_encoder(sent, (feat, pos), policy)
+        x = self.lxrt_encoder(sent, (feat, pos), policy=policy)
         logit = self.logit_fc(x)
 
         return logit
