@@ -34,6 +34,9 @@ def get_optimizer(optim):
 def parse_args():
     parser = argparse.ArgumentParser()
 
+    # version
+    parser.add_argument("--version", default='version')
+
     # Data Splits
     parser.add_argument("--train", default='train')
     parser.add_argument("--valid", default='valid')
