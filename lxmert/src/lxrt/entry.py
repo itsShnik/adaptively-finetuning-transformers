@@ -84,7 +84,7 @@ def set_policy_config(args):
 
 
 class LXRTEncoder(nn.Module):
-    def __init__(self, args, max_seq_length, mode='x'):
+    def __init__(self, args, max_seq_length, finetune_strategy='standard', mode='x'):
         super().__init__()
         self.max_seq_length = max_seq_length
         set_visual_config(args)
@@ -98,7 +98,8 @@ class LXRTEncoder(nn.Module):
         # Build LXRT Model
         self.model = VisualBertForLXRFeature.from_pretrained(
             "bert-base-uncased",
-            mode=mode
+            mode=mode,
+            finetune_strategy=finetune_strategy
         )
 
         if args.from_scratch:
@@ -112,7 +113,7 @@ class LXRTEncoder(nn.Module):
     def dim(self):
         return 768
 
-    def forward(self, sents, feats, visual_attention_mask=None):
+    def forward(self, sents, feats, policy=None, visual_attention_mask=None):
         train_features = convert_sents_to_features(
             sents, self.max_seq_length, self.tokenizer)
 
@@ -121,7 +122,7 @@ class LXRTEncoder(nn.Module):
         segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long).cuda()
 
         output = self.model(input_ids, segment_ids, input_mask,
-                            visual_feats=feats,
+                            visual_feats=feats, policy=policy,
                             visual_attention_mask=visual_attention_mask)
         return output
 

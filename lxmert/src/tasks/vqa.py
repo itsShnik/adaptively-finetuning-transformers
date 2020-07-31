@@ -54,7 +54,7 @@ class VQA:
 
         # if finetune strategy is spottune
         if args.finetune_strategy in PolicyStrategies:
-            self.policy_model = PolicyLXRT 
+            self.policy_model = PolicyLXRT(PolicyStrategies[args.finetune_strategy])
 
         # Load pre-trained weights
         if args.load_lxmert is not None:
