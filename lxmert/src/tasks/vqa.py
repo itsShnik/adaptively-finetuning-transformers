@@ -19,11 +19,11 @@ from gumbel_softmax import gumbel_softmax
 
 import wandb
 
-wandb.init(project='adaptive-finetuning-lxmert', name=args.version, config=args)
+wandb.init(project='adaptive-finetuning-lxmert', name=args.version)
 
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
-PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
+PolicyStrategies = {'SpotTune': 850, 'SpotTune_Block':38}
 
 
 def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataTuple:
@@ -54,7 +54,7 @@ class VQA:
             self.valid_tuple = None
         
         # Model
-        self.model = VQAModel(self.train_tuple.dataset.num_answers)
+        self.model = VQAModel(self.train_tuple.dataset.num_answers, finetune_strategy=args.finetune_strategy)
 
         # if finetune strategy is spottune
         if args.finetune_strategy in PolicyStrategies:
@@ -113,7 +113,7 @@ class VQA:
                 self.model.train()
                 self.optim.zero_grad()
 
-                if self.finetune_strategy in PolicyStrategies:
+                if args.finetune_strategy in PolicyStrategies:
                     self.policy_model.train()
                     self.policy_optim.zero_grad()
 
@@ -122,7 +122,7 @@ class VQA:
                 if args.finetune_strategy in PolicyStrategies:
                     # calculate the policy vector here
                     policy_vec = self.policy_model(feats, boxes, sent)
-                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0)), -1, 2)
+                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0), -1, 2))
                     policy = policy_action[:, :, 1]
                     logit = self.model(feats, boxes, sent, policy)
                 else:
@@ -131,8 +131,6 @@ class VQA:
                 assert logit.dim() == target.dim() == 2
                 loss = self.bce_loss(logit, target)
                 loss = loss * logit.size(1)
-
-                wandb.log({'Training Loss':loss})
 
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
@@ -148,7 +146,7 @@ class VQA:
             train_acc = evaluator.evaluate(quesid2ans) * 100.
             log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, train_acc)
 
-            wandb.log({'Training Accuracy': train_acc})
+            wandb.log({'Training Accuracy': train_acc}, step=epoch)
 
             if self.valid_tuple is not None:  # Do Validation
                 valid_score = self.evaluate(eval_tuple)
@@ -159,7 +157,7 @@ class VQA:
                 log_str += "Epoch %d: Valid %0.2f\n" % (epoch, valid_score * 100.) + \
                            "Epoch %d: Best %0.2f\n" % (epoch, best_valid * 100.)
 
-                wandb.log({'Validation Accuracy': valid_score * 100.})
+                wandb.log({'Validation Accuracy': valid_score * 100.}, step=epoch)
 
             print(log_str, end='')
 
@@ -189,7 +187,7 @@ class VQA:
                 if args.finetune_strategy in PolicyStrategies:
                     # calculate the policy vector here
                     policy_vec = self.policy_model(feats, boxes, sent)
-                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0)), -1, 2)
+                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0), -1, 2))
                     policy = policy_action[:, :, 1]
                     logit = self.model(feats, boxes, sent, policy)
                 else:
