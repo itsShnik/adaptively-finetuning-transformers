@@ -108,6 +108,11 @@ def load_lxmert_qa(path, model, label2ans):
         if key.startswith('bert.'):
             bert_state_dict[key] = value
 
+    # Load pretrained weights in parallel parts also
+    for key in model.lxrt_encoder.model.state_dict():
+        if 'parallel_' in key:
+            bert_state_dict[key] = bert_state_dict[key.replace('parallel_', '')]
+
     # Isolate answer head
     answer_state_dict = {}
     for key, value in loaded_state_dict.items():
