@@ -7,7 +7,7 @@ import random
 import numpy as np
 import torch
 
-PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
+PolicyStrategies = {'SpotTune': 850, 'SpotTune_Block':38}
 
 def get_optimizer(optim):
     # Bind the optimizer
@@ -93,7 +93,7 @@ def parse_args():
     parser.add_argument("--numWorkers", dest='num_workers', default=0)
 
     # Finetuning strategy config
-    parser.add_argument("--strategy", dest='finetuning_strategy', default='standard', type=str, help='Finetuning strategy for model' )
+    parser.add_argument("--strategy", dest='finetune_strategy', default='standard', type=str, help='Finetuning strategy for model' )
 
     # Args related to policy net
     parser.add_argument('--policy_llayers', default=2, type=int)
