@@ -167,6 +167,7 @@ class VisualConfig(object):
 
 
 VISUAL_CONFIG = VisualConfig()
+POLICY_CONFIG = VisualConfig()
 
 
 class BertConfig(object):
@@ -306,7 +307,8 @@ class BertAttention(nn.Module):
 
         # visual_dim = 2048
         if ctx_dim is None:
-            ctx_dim =config.hidden_size
+            ctx_dim=config.hidden_size
+
         self.query = nn.Linear(config.hidden_size, self.all_head_size)
         self.key = nn.Linear(ctx_dim, self.all_head_size)
         self.value = nn.Linear(ctx_dim, self.all_head_size)
@@ -458,7 +460,7 @@ class BertCrossattLayer(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super().__init__()
         self.finetune_strategy = finetune_strategy
-        self.att = BertAttention(config, finetune_strategy)
+        self.att = BertAttention(config, finetune_strategy=finetune_strategy)
         self.output = BertAttOutput(config)
 
         # if spottune strategy, create a new parallel block
@@ -470,7 +472,7 @@ class BertCrossattLayer(nn.Module):
     def forward(self, input_tensor, ctx_tensor, ctx_att_mask=None, policy=None, current_index=None):
         output, current_index = self.att(input_tensor, ctx_tensor, ctx_att_mask, policy=policy, current_index=current_index)
         attention_output = self.output(output, input_tensor)
-        if finetune_strategy == 'SpotTune':
+        if self.finetune_strategy == 'SpotTune':
             parallel_attention_output = self.parallel_output(output, input_tensor)
             action = policy[:,current_index].contiguous()
             action_mask = action.float().view(-1, 1, 1)
@@ -484,7 +486,7 @@ class BertSelfattLayer(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super(BertSelfattLayer, self).__init__()
         self.finetune_strategy = finetune_strategy
-        self.self = BertAttention(config, finetune_strategy)
+        self.self = BertAttention(config, finetune_strategy=finetune_strategy)
         self.output = BertAttOutput(config)
 
         if finetune_strategy == 'SpotTune':
@@ -592,6 +594,9 @@ class BertLayer(nn.Module):
 class LXRTXLayer(nn.Module):
     def __init__(self, config, finetune_strategy='standard'):
         super().__init__()
+
+        # finetune strategy
+        self.finetune_strategy=finetune_strategy
         # The cross-attention Layer
         self.visual_attention = BertCrossattLayer(config, finetune_strategy)
 
@@ -650,7 +655,7 @@ class LXRTXLayer(nn.Module):
 
         visn_inter_output = self.visn_inter(visn_input)
         if self.finetune_strategy == 'SpotTune':
-            parallel_visn_inter_output = self.parallel_visn_inter(lang_input)
+            parallel_visn_inter_output = self.parallel_visn_inter(visn_input)
             action = policy[:,current_index].contiguous()
             action_mask = action.float().view(-1, 1, 1)
             visn_inter_output = action_mask * visn_inter_output + (1-action_mask) * parallel_visn_inter_output 
@@ -746,6 +751,15 @@ class LXRTEncoder(nn.Module):
             [BertLayer(config, finetune_strategy=finetune_strategy) for _ in range(self.num_r_layers)]
         )
 
+        # Frozen bert
+        if finetune_strategy == 'Frozen_Bert':
+            for params in self.layer.parameters():
+                params.requires_grad = False
+            for params in self.x_layers.parameters():
+                params.requires_grad = False
+            for params in self.r_layers.parameters():
+                params.requires_grad = False
+
         # if strategy is spottune block
         if finetune_strategy == 'SpotTune_Block':
             self.parallel_layer = nn.ModuleList(
@@ -823,14 +837,8 @@ class LXRTEncoder(nn.Module):
                 action = policy[:, current_index].contiguous() 
                 action_mask = action.float().view(-1, 1, 1)
 
+                # currently using same policy for both modalities, we can try with different
                 lang_feats = action_mask * lang_feats + (1-action_mask) * parallel_lang_feats
-
-                current_index += 1
-
-                # Now decide which one to take
-                action = policy[:, current_index].contiguous() 
-                action_mask = action.float().view(-1, 1, 1)
-
                 visn_feats = action_mask * visn_feats + (1-action_mask) * parallel_visn_feats
 
                 current_index += 1
@@ -1340,15 +1348,15 @@ class PolicyLXRTEncoder(nn.Module):
 
         # Run language layers
         for layer_module in self.layer:
-            lang_feats = layer_module(lang_feats, lang_attention_mask)
+            lang_feats, _ = layer_module(lang_feats, lang_attention_mask)
 
         # Run relational layers
         for layer_module in self.r_layers:
-            visn_feats = layer_module(visn_feats, visn_attention_mask)
+            visn_feats, _ = layer_module(visn_feats, visn_attention_mask)
 
         # Run cross-modality layers
         for layer_module in self.x_layers:
-            lang_feats, visn_feats = layer_module(lang_feats, lang_attention_mask,
+            lang_feats, visn_feats, _ = layer_module(lang_feats, lang_attention_mask,
                                                   visn_feats, visn_attention_mask)
 
         return lang_feats, visn_feats
