@@ -16,10 +16,15 @@ from tasks.vqa_data import VQADataset, VQATorchDataset, VQAEvaluator
 from policy.lxrt import PolicyLXRT
 
 from gumbel_softmax import gumbel_softmax
+from vis.policy_visualization import Visualization
+
+import wandb
+
+wandb.init(project='adaptive-finetuning-lxmert', name=args.version)
 
 DataTuple = collections.namedtuple("DataTuple", 'dataset loader evaluator')
 
-PolicyStrategies = {'SpotTune': 285, 'SpotTune_Block':19}
+PolicyStrategies = {'SpotTune': 850, 'SpotTune_Block':38}
 
 
 def get_data_tuple(splits: str, bs:int, shuffle=False, drop_last=False) -> DataTuple:
@@ -50,7 +55,7 @@ class VQA:
             self.valid_tuple = None
         
         # Model
-        self.model = VQAModel(self.train_tuple.dataset.num_answers)
+        self.model = VQAModel(self.train_tuple.dataset.num_answers, finetune_strategy=args.finetune_strategy)
 
         # if finetune strategy is spottune
         if args.finetune_strategy in PolicyStrategies:
@@ -93,19 +98,30 @@ class VQA:
         self.output = args.output
         os.makedirs(self.output, exist_ok=True)
 
-    def train(self, train_tuple, eval_tuple):
+    def train(self, train_tuple, eval_tuple, visualizer=None):
         dset, loader, evaluator = train_tuple
         iter_wrapper = (lambda x: tqdm(x, total=len(loader))) if args.tqdm else (lambda x: x)
 
+        wandb.watch(self.model, log='all')
+        if args.finetune_strategy in PolicyStrategies:
+            wandb.watch(self.policy_model, log='all')
+
         best_valid = 0.
+
+
         for epoch in range(args.epochs):
+            # for policy vec plotting
+            if args.finetune_strategy in PolicyStrategies:
+                policy_save = torch.zeros(PolicyStrategies[args.finetune_strategy] // 2).cpu()
+                policy_max = 0
+
             quesid2ans = {}
             for i, (ques_id, feats, boxes, sent, target) in iter_wrapper(enumerate(loader)):
 
                 self.model.train()
                 self.optim.zero_grad()
 
-                if self.finetune_strategy in PolicyStrategies:
+                if args.finetune_strategy in PolicyStrategies:
                     self.policy_model.train()
                     self.policy_optim.zero_grad()
 
@@ -114,8 +130,10 @@ class VQA:
                 if args.finetune_strategy in PolicyStrategies:
                     # calculate the policy vector here
                     policy_vec = self.policy_model(feats, boxes, sent)
-                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0)), -1, 2)
+                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0), -1, 2))
                     policy = policy_action[:, :, 1]
+                    policy_save = policy_save + policy.clone().detach().cpu().sum(0)
+                    policy_max += policy.size(0)
                     logit = self.model(feats, boxes, sent, policy)
                 else:
                     logit = self.model(feats, boxes, sent)
@@ -135,16 +153,27 @@ class VQA:
                     ans = dset.label2ans[l]
                     quesid2ans[qid.item()] = ans
 
-            log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, evaluator.evaluate(quesid2ans) * 100.)
+
+            # check if visualizer is not none
+            if visualizer is not None:
+                print(f'Creating training visualizations for epoch {epoch}')
+                visualizer.plot(policy_save, policy_max, epoch=epoch, mode='train')
+
+            train_acc = evaluator.evaluate(quesid2ans) * 100.
+            log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, train_acc)
+
+            wandb.log({'Training Accuracy': train_acc}, step=epoch)
 
             if self.valid_tuple is not None:  # Do Validation
-                valid_score = self.evaluate(eval_tuple)
+                valid_score = self.evaluate(eval_tuple, epoch=epoch, visualizer=visualizer)
                 if valid_score > best_valid:
                     best_valid = valid_score
                     self.save("BEST")
 
                 log_str += "Epoch %d: Valid %0.2f\n" % (epoch, valid_score * 100.) + \
                            "Epoch %d: Best %0.2f\n" % (epoch, best_valid * 100.)
+
+                wandb.log({'Validation Accuracy': valid_score * 100.}, step=epoch)
 
             print(log_str, end='')
 
@@ -154,7 +183,7 @@ class VQA:
 
         self.save("LAST")
 
-    def predict(self, eval_tuple: DataTuple, dump=None):
+    def predict(self, eval_tuple: DataTuple, dump=None, epoch=0, visualizer=None):
         """
         Predict the answers to questions in a data split.
 
@@ -165,6 +194,9 @@ class VQA:
         self.model.eval()
         if args.finetune_strategy in PolicyStrategies:
             self.policy_model.eval()
+            policy_save = torch.zeros(PolicyStrategies[args.finetune_strategy] // 2)
+            policy_max = 0
+
         dset, loader, evaluator = eval_tuple
         quesid2ans = {}
         for i, datum_tuple in enumerate(loader):
@@ -174,8 +206,10 @@ class VQA:
                 if args.finetune_strategy in PolicyStrategies:
                     # calculate the policy vector here
                     policy_vec = self.policy_model(feats, boxes, sent)
-                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0)), -1, 2)
+                    policy_action = gumbel_softmax(policy_vec.view(policy_vec.size(0), -1, 2))
                     policy = policy_action[:, :, 1]
+                    policy_save = policy_save + policy.clone().detach().cpu().sum(0)
+                    policy_max += policy.size(0)
                     logit = self.model(feats, boxes, sent, policy)
                 else:
                     logit = self.model(feats, boxes, sent)
@@ -184,13 +218,18 @@ class VQA:
                 for qid, l in zip(ques_id, label.cpu().numpy()):
                     ans = dset.label2ans[l]
                     quesid2ans[qid.item()] = ans
+
+        if visualizer is not None:
+            print(f'Creating validation visualization for epoch {epoch}...')
+            visualizer.plot(policy_save, policy_max, epoch=epoch, mode='val')
+
         if dump is not None:
             evaluator.dump_result(quesid2ans, dump)
         return quesid2ans
 
-    def evaluate(self, eval_tuple: DataTuple, dump=None):
+    def evaluate(self, eval_tuple: DataTuple, dump=None, epoch=0, visualizer=None):
         """Evaluate all data in data_tuple."""
-        quesid2ans = self.predict(eval_tuple, dump)
+        quesid2ans = self.predict(eval_tuple, dump, epoch=epoch, visualizer=visualizer)
         return eval_tuple.evaluator.evaluate(quesid2ans)
 
     @staticmethod
@@ -250,6 +289,11 @@ if __name__ == "__main__":
             print("Valid Oracle: %0.2f" % (vqa.oracle_score(vqa.valid_tuple) * 100))
         else:
             print("DO NOT USE VALIDATION")
-        vqa.train(vqa.train_tuple, vqa.valid_tuple)
+
+        # if policy net, create a visualizer
+        if args.finetune_strategy in PolicyStrategies:
+            visualizer = Visualization(args.finetune_strategy)
+
+        vqa.train(vqa.train_tuple, vqa.valid_tuple, visualizer)
 
 
