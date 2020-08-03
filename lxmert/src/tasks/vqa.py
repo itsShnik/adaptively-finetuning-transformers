@@ -293,6 +293,8 @@ if __name__ == "__main__":
         # if policy net, create a visualizer
         if args.finetune_strategy in PolicyStrategies:
             visualizer = Visualization(args.finetune_strategy)
+        else:
+            visualizer = None
 
         vqa.train(vqa.train_tuple, vqa.valid_tuple, visualizer)
 
