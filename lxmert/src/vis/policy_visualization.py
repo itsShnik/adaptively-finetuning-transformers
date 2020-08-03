@@ -28,5 +28,6 @@ class Visualization:
 
         # just pass this plt to wandb.log while integrating with wandb
         # currently saving locally only
+        wandb.log({f'{self.finetune_strategy} Finetuned Fraction {mode}': plt})
         plt.savefig('visualizations/{}_{}_epoch_{}.png'.format(self.finetune_strategy, mode, epoch))
         plt.close()
