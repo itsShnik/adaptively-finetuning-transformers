@@ -162,7 +162,7 @@ class VQA:
             train_acc = evaluator.evaluate(quesid2ans) * 100.
             log_str = "\nEpoch %d: Train %0.2f\n" % (epoch, train_acc)
 
-            wandb.log({'Training Accuracy': train_acc}, step=epoch)
+            wandb.log({'Training Accuracy': train_acc})
 
             if self.valid_tuple is not None:  # Do Validation
                 valid_score = self.evaluate(eval_tuple, epoch=epoch, visualizer=visualizer)
@@ -173,7 +173,7 @@ class VQA:
                 log_str += "Epoch %d: Valid %0.2f\n" % (epoch, valid_score * 100.) + \
                            "Epoch %d: Best %0.2f\n" % (epoch, best_valid * 100.)
 
-                wandb.log({'Validation Accuracy': valid_score * 100.}, step=epoch)
+                wandb.log({'Validation Accuracy': valid_score * 100.})
 
             print(log_str, end='')
 
