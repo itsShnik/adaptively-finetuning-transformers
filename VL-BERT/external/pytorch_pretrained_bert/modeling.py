@@ -677,6 +677,36 @@ class BertEncoder(nn.Module):
                 if output_all_encoded_layers:
                     all_encoder_layers.append(hidden_states)
 
+        elif self.finetune_strategy == 'BlockDrop':
+            current_index = 0
+            for layer_module in self.layer:
+                if output_attention_probs:
+                    hidden_states_temp, _, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+                    all_attention_probs.append(attention_probs)
+
+                    # Now take a decision: for which input samples 
+                    # should we bypass the layer
+                    action = policy[:, current_index].contiguous() 
+                    action_mask = action.float().view(-1, 1, 1)
+
+                    hidden_states = action_mask * hidden_states_temp + (1 - action_mask) * hidden_states
+
+                else:
+                    hidden_states_temp, _ = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # Now take a decision: for which input samples 
+                    # should we bypass the layer
+                    action = policy[:, current_index].contiguous() 
+                    action_mask = action.float().view(-1, 1, 1)
+
+                    hidden_states = action_mask * hidden_states_temp + (1 - action_mask) * hidden_states
+
+                current_index += 1
+
+                # after we have gotten states from a block
+                if output_all_encoded_layers:
+                    all_encoder_layers.append(hidden_states)
+
         else:
             # for all other strategies, we use standard procedure
             for layer_module in self.layer: 
