@@ -1,5 +1,5 @@
 # exclude the data folder
-data*
+data
 
 # pycache
 *pycache*
