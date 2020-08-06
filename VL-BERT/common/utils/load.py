@@ -94,3 +94,37 @@ def smart_partial_load_model_state_dict(model, state_dict):
     new_state_dict.update(parsed_state_dict)
     model.load_state_dict(new_state_dict)
 
+def smart_full_load_model_state_dict(model, state_dict):
+    parsed_state_dict = {}
+    non_match_keys = []
+    pretrained_keys = []
+    for k, v in state_dict.items():
+        if k not in model.state_dict():
+            if k.startswith('module.'):
+                k = k[len('module.'):]
+            else:
+                k = 'module.' + k
+        if k in model.state_dict():
+            parsed_state_dict[k] = v
+        else:
+            non_match_keys.append(k)
+            # raise ValueError('failed to match key of state dict smartly!')
+
+    # now load the same parameters in parallel blocks
+    for k in model.state_dict():
+        if 'parallel_' in str(k):
+            parsed_state_dict[k] = parsed_state_dict[k.replace('parallel_', '')]
+
+    for k in parsed_state_dict.keys():
+        if k in model.state_dict():
+            pretrained_keys.append(k)
+
+    non_pretrain_keys = [k for k in model.state_dict().keys() if k not in pretrained_keys]
+
+    # non_pretrain keys should be zero
+    assert len(non_pretrain_keys) == 0, "Error! Non pretrain keys not zero"
+
+    new_state_dict = model.state_dict()
+    new_state_dict.update(parsed_state_dict)
+    model.load_state_dict(new_state_dict)
+
