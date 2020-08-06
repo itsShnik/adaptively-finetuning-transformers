@@ -278,6 +278,7 @@ def train_net(args, config):
 
     # check if we have to load full or partial vlbert
     if config.NETWORK.FULL_PRETRAIN != "":
+        print("Using the full pretrained network")
         pretrain_state_dict = torch.load(config.NETWORK.FULL_PRETRAIN, map_location=lambda storage, loc:storage)['state_dict']
         smart_full_load_model_state_dict(model, pretrain_state_dict)
 
