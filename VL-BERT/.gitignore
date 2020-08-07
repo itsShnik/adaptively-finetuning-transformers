@@ -1,6 +1,3 @@
-# exclude the data folder
-data*
-
 # pycache
 *pycache*
 
@@ -25,3 +22,6 @@ output/*
 # wandb
 wandb/*
 visualizations/*
+
+#pyc files
+*.pyc
