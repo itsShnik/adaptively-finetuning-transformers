@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from common.utils.create_logger import create_logger
 from common.utils.misc import summary_parameters, bn_fp16_half_eval
-from common.utils.load import smart_resume, smart_partial_load_model_state_dict
+from common.utils.load import smart_resume, smart_partial_load_model_state_dict, smart_full_load_model_state_dict
 from common.trainer import train
 from common.metrics.composite_eval_metric import CompositeEvalMetric
 from common.metrics import vqa_metrics
@@ -45,13 +45,13 @@ PolicyVec = {'SpotTune':180,
 
 def train_net(args, config):
     # will load pretrained
-    if config.NETWORK.PARTIAL_PRETRAIN != "":
+    if config.NETWORK.PARTIAL_PRETRAIN != "" or config.NETWORK.FULL_PRETRAIN != "":
         load_pretrained_vlbert = True
 
     # setup logger
     logger, final_output_path = create_logger(config.OUTPUT_PATH, args.cfg, config.DATASET.TRAIN_IMAGE_SET,
                                               split='train')
-    model_prefix = os.path.join(final_output_path, config.MODEL_PREFIX)
+    model_prefix = os.path.join(final_output_path, config.VERSION)
     if args.log_dir is None:
         args.log_dir = os.path.join(final_output_path, 'tensorboard_logs')
 
@@ -277,8 +277,14 @@ def train_net(args, config):
     if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
         wandb.watch(policy_model, log='all')
 
+    # check if we have to load full or partial vlbert
+    if config.NETWORK.FULL_PRETRAIN != "":
+        print("Using the full pretrained network")
+        pretrain_state_dict = torch.load(config.NETWORK.FULL_PRETRAIN, map_location=lambda storage, loc:storage)['state_dict']
+        smart_full_load_model_state_dict(model, pretrain_state_dict)
+
     # partial load pretrain state dict
-    if load_pretrained_vlbert:
+    elif load_pretrained_vlbert:
         pretrain_state_dict = torch.load(config.NETWORK.PARTIAL_PRETRAIN, map_location=lambda storage, loc: storage)['state_dict']
         prefix_change = [prefix_change.split('->') for prefix_change in config.NETWORK.PARTIAL_PRETRAIN_PREFIX_CHANGES]
         if len(prefix_change) > 0:
@@ -296,23 +302,23 @@ def train_net(args, config):
             pretrain_state_dict = pretrain_state_dict_parsed
         smart_partial_load_model_state_dict(model, pretrain_state_dict)
 
-    # pretrained classifier
-    if config.NETWORK.CLASSIFIER_PRETRAINED:
-        print('Initializing classifier weight from pretrained word embeddings...')
-        answers_word_embed = []
-        for k, v in model.state_dict().items():
-            if 'word_embeddings.weight' in k:
-                word_embeddings = v.detach().clone()
-                break
-        for answer in train_loader.dataset.answer_vocab:
-            a_tokens = train_loader.dataset.tokenizer.tokenize(answer)
-            a_ids = train_loader.dataset.tokenizer.convert_tokens_to_ids(a_tokens)
-            a_word_embed = (torch.stack([word_embeddings[a_id] for a_id in a_ids], dim=0)).mean(dim=0)
-            answers_word_embed.append(a_word_embed)
-        answers_word_embed_tensor = torch.stack(answers_word_embed, dim=0)
-        for name, module in model.named_modules():
-            if name.endswith('final_mlp'):
-                module[-1].weight.data = answers_word_embed_tensor.to(device=module[-1].weight.data.device)
+        # pretrained classifier
+        if config.NETWORK.CLASSIFIER_PRETRAINED:
+            print('Initializing classifier weight from pretrained word embeddings...')
+            answers_word_embed = []
+            for k, v in model.state_dict().items():
+                if 'word_embeddings.weight' in k:
+                    word_embeddings = v.detach().clone()
+                    break
+            for answer in train_loader.dataset.answer_vocab:
+                a_tokens = train_loader.dataset.tokenizer.tokenize(answer)
+                a_ids = train_loader.dataset.tokenizer.convert_tokens_to_ids(a_tokens)
+                a_word_embed = (torch.stack([word_embeddings[a_id] for a_id in a_ids], dim=0)).mean(dim=0)
+                answers_word_embed.append(a_word_embed)
+            answers_word_embed_tensor = torch.stack(answers_word_embed, dim=0)
+            for name, module in model.named_modules():
+                if name.endswith('final_mlp'):
+                    module[-1].weight.data = answers_word_embed_tensor.to(device=module[-1].weight.data.device)
 
     # metrics
     train_metrics_list = [vqa_metrics.SoftAccuracy(allreduce=args.dist,
