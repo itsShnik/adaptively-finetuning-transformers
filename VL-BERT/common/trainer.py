@@ -234,10 +234,11 @@ def train(net,
             end_time = time.time()
 
         # excute epoch_end_callbacks
-        if validation_monitor is not None:
-            validation_monitor(epoch, net, optimizer, writer, policy_net=policy_net, policy_optimizer=policy_optimizer)
         if visualization_plotter is not None:
+            print("Plotting Training Visualizations")
             visualization_plotter(finetune_strategy, policy_save, policy_max, epoch)
+        if validation_monitor is not None:
+            validation_monitor(epoch, net, optimizer, writer, finetune_strategy=finetune_strategy, policy_net=policy_net, policy_optimizer=policy_optimizer)
         if epoch_end_callbacks is not None:
             _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor, policy_net=policy_net, policy_optimizer=policy_optimizer)
 
