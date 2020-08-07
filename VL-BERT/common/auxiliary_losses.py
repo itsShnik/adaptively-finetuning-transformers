@@ -18,3 +18,20 @@ def constrain_k_loss(policy, num_blocks, scale):
     loss *= scale
 
     return loss
+
+def deterministic_policy_loss(policy, scale):
+    """
+    Policy: Action Vector
+    Scale: The multiplying factor for loss
+    """
+
+    # first obtain the fraction of data using each block
+    fraction = policy.mean(0)
+
+    # calculate the loss
+    loss = (-1 * policy * torch.log(policy)).sum(0)
+
+    # scale the loss
+    loss *= scale
+
+    return loss
