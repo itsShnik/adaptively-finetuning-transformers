@@ -21,6 +21,14 @@ _C.SCALES = ()
 _C.FINETUNE_STRATEGY = 'SpotTune'
 _C.VERSION = 'adaptive-finetune'
 
+# ------------------------------------------------------------------------------------ #
+# Losses related options
+# ------------------------------------------------------------------------------------ #
+
+_C.USE_CONSTRAIN_K_LOSS = False
+_C.CONSTRAIN_K_NUM_BLOCKS = 4
+_C.CONSTRAIN_K_SCALE = 1
+
 # ------------------------------------------------------------------------------------- #
 # Common dataset options
 # ------------------------------------------------------------------------------------- #
@@ -263,7 +271,7 @@ _C.TRAIN.WD = 0.0001
 _C.TRAIN.MOMENTUM = 0.9
 _C.TRAIN.FP16 = False
 _C.TRAIN.FP16_LOSS_SCALE = 128.0
-_C.TRAIN.LOSS_LOGGERS = [('ans_loss', 'AnsLoss')]
+_C.TRAIN.LOSS_LOGGERS = [('ans_loss', 'AnsLoss'), ('loss_k', 'ConstrainKLoss')]
 
 # ------------------------------------------------------------------------------------- #
 # Common validation related options
