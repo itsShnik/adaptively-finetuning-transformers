@@ -267,7 +267,7 @@ class ResNetVLBERT(Module):
                 outputs.update({'loss_k': loss_k})
 
             if self.config.USE_DETERMINISTIC_POLICY_LOSS:
-                loss_d = deterministic_policy_loss(policy, self.config.USE_DETERMINISTIC_POLICY_SCALE)
+                loss_d = deterministic_policy_loss(policy, self.config.DETERMINISTIC_POLICY_SCALE)
                 loss += loss_d
                 outputs.update({'loss_d': loss_d})
 
