@@ -28,8 +28,11 @@ def deterministic_policy_loss(policy, scale):
     # first obtain the fraction of data using each block
     fraction = policy.mean(0)
 
+    # to avoid log zero add a very small value to fraction
+    fraction = fraction + 1e-9
+
     # calculate the loss
-    loss = (-1 * policy * torch.log(policy)).sum(0)
+    loss = (-1 * fraction * torch.log(fraction)).sum(0).mean(0)
 
     # scale the loss
     loss *= scale
