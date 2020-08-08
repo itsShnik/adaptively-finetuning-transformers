@@ -10,7 +10,7 @@ VAL_FREQUENT: 1
 CHECKPOINT_FREQUENT: 1
 MODEL_PREFIX: 'vl-bert_base_res101_vqa'
 NUM_WORKERS_PER_GPU: 4
-VERSION: 'blockdrop_with_constrain_k4'
+VERSION: 'blockdrop_with_ck4_dpl'
 SCALES:
 - 600
 - 1000
