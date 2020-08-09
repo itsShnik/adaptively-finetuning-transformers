@@ -24,8 +24,8 @@ class ValidationMonitor(object):
         self.best_epoch = state_dict['best_epoch']
         self.best_val = state_dict['best_val']
 
-    def __call__(self, epoch_num, net, optimizer, writer, finetune_strategy='standard', policy_net=None, policy_optimizer=None):
-        self.val_func(net, self.val_loader, self.metrics, self.label_index_in_batch, epoch_num=epoch_num, finetune_strategy=finetune_strategy, policy_net=policy_net)
+    def __call__(self, epoch_num, net, optimizer, writer, finetune_strategy='standard', policy_net=None, policy_optimizer=None, global_decision=False, policy_decisions=None, policy_max=None):
+        self.val_func(net, self.val_loader, self.metrics, self.label_index_in_batch, epoch_num=epoch_num, finetune_strategy=finetune_strategy, policy_net=policy_net, global_decision=global_decision, policy_decisions=policy_decisions, policy_total=policy_max)
 
         name, value = self.metrics.get()
         s = "Epoch[%d] \tVal-" % (epoch_num)
