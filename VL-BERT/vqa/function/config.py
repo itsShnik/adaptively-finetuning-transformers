@@ -32,6 +32,8 @@ _C.CONSTRAIN_K_SCALE = 1
 _C.USE_DETERMINISTIC_POLICY_LOSS = False
 _C.DETERMINISTIC_POLICY_SCALE = 1
 
+_C.POLICY_GLOBAL_DECISION = False
+
 # ------------------------------------------------------------------------------------- #
 # Common dataset options
 # ------------------------------------------------------------------------------------- #
