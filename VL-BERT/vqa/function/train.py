@@ -464,6 +464,6 @@ def train_net(args, config):
           rank=rank, batch_end_callbacks=batch_end_callbacks, epoch_end_callbacks=epoch_end_callbacks,
           writer=writer, validation_monitor=validation_monitor, visualization_plotter=visualization_plotter if config.FINETUNE_STRATEGY in PolicyVec else None, fp16=config.TRAIN.FP16,
           clip_grad_norm=config.TRAIN.CLIP_GRAD_NORM,
-          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_net=policy_model if config.FINETUNE_STRATEGY in PolicyVec else None, policy_optimizer=policy_optimizer if config.FINETUNE_STRATEGY in PolicyVec else None, policy_lr_scheduler=policy_lr_scheduler if config.FINETUNE_STRATEGY in PolicyVec else None)
+          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_net=policy_model if config.FINETUNE_STRATEGY in PolicyVec else None, policy_optimizer=policy_optimizer if config.FINETUNE_STRATEGY in PolicyVec else None, policy_lr_scheduler=policy_lr_scheduler if config.FINETUNE_STRATEGY in PolicyVec else None, global_decision=config.POLICY_GLOBAL_DECISION)
 
     return rank, model
