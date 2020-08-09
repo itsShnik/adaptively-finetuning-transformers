@@ -81,13 +81,14 @@ def train(net,
           finetune_strategy='standard',
           policy_net=None,
           policy_optimizer=None,
-          policy_lr_scheduler=None):
+          policy_lr_scheduler=None,
+          global_decision=False):
 
     assert isinstance(gradient_accumulate_steps, int) and gradient_accumulate_steps >= 1
 
     for epoch in range(begin_epoch, end_epoch):
         if finetune_strategy in PolicyVec:
-            policy_save = torch.zeros(PolicyVec[finetune_strategy]).cpu()
+            policy_decisions = torch.zeros(PolicyVec[finetune_strategy]).cuda(non_blocking=True)
             policy_max = 0
 
         print('PROGRESS: %.2f%%' % (100.0 * epoch / end_epoch))
@@ -143,7 +144,7 @@ def train(net,
                 policy_vector = policy_net(*batch)
                 policy_action = gumbel_softmax(policy_vector.view(policy_vector.size(0), -1, 2))
                 policy = policy_action[:,:,1]
-                policy_save = policy_save + policy.clone().detach().cpu().sum(0)
+                policy_decisions = policy_decisions + policy.clone().detach().sum(0)
                 policy_max += policy.size(0)
                 outputs, loss = net(*batch, policy)
             else:
@@ -236,9 +237,9 @@ def train(net,
         # excute epoch_end_callbacks
         if visualization_plotter is not None:
             print("Plotting Training Visualizations")
-            visualization_plotter(finetune_strategy, policy_save, policy_max, epoch)
+            visualization_plotter(finetune_strategy, policy_decisions, policy_max, epoch)
         if validation_monitor is not None:
-            validation_monitor(epoch, net, optimizer, writer, finetune_strategy=finetune_strategy, policy_net=policy_net, policy_optimizer=policy_optimizer)
+            validation_monitor(epoch, net, optimizer, writer, finetune_strategy=finetune_strategy, policy_net=policy_net, policy_optimizer=policy_optimizer, global_decision=global_decision, policy_decisions=policy_decisions, policy_max=policy_max)
         if epoch_end_callbacks is not None:
             _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor, policy_net=policy_net, policy_optimizer=policy_optimizer)
 

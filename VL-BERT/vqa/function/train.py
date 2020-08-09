@@ -47,6 +47,8 @@ def train_net(args, config):
     # will load pretrained
     if config.NETWORK.PARTIAL_PRETRAIN != "":
         load_pretrained_vlbert = True
+    else:
+        load_pretrained_vlbert = False
 
     # setup logger
     logger, final_output_path = create_logger(config.OUTPUT_PATH, args.cfg, config.DATASET.TRAIN_IMAGE_SET,
@@ -95,17 +97,17 @@ def train_net(args, config):
         model = model.cuda()
 
         # the policy network
-        if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+        if config.FINETUNE_STRATEGY in PolicyVec:
             policy_model = eval(config.POLICY_MODULE)(config)
             policy_model = policy_model.cuda()
 
         if not config.TRAIN.FP16:
             model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-            if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+            if config.FINETUNE_STRATEGY in PolicyVec:
                 policy_model = DDP(policy_model, device_ids=[local_rank], output_device=local_rank)
 
         if rank == 0:
-            if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+            if config.FINETUNE_STRATEGY in PolicyVec:
                 summary_parameters(policy_model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
             summary_parameters(model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model, logger)
             shutil.copy(args.cfg, final_output_path)
@@ -161,7 +163,7 @@ def train_net(args, config):
             raise ValueError('Not support optimizer {}!'.format(config.TRAIN.OPTIMIZER))
 
         # optimizer for the policy network
-        if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+        if config.FINETUNE_STRATEGY in PolicyVec:
             if config.POLICY.OPTIMIZER == 'SGD':
                 policy_optimizer = optim.SGD(policy_model.parameters(),
                                             lr=config.POLICY.LR * batch_size,
@@ -188,7 +190,7 @@ def train_net(args, config):
         model = eval(config.MODULE)(config)
 
         # the policy network
-        if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+        if config.FINETUNE_STRATEGY in PolicyVec:
             policy_model = eval(config.POLICY_MODULE)(config)
 
         summary_parameters(model, logger)
@@ -207,13 +209,13 @@ def train_net(args, config):
             model = torch.nn.DataParallel(model, device_ids=[int(d) for d in config.GPUS.split(',')]).cuda()
 
             # policy network
-            if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+            if config.FINETUNE_STRATEGY in PolicyVec:
                 policy_model = torch.nn.DataParallel(policy_model, device_ids = [int(d) for d in config.GPUS.split(',')]).cuda()
         else:
             torch.cuda.set_device(int(config.GPUS))
             model.cuda()
             # policy network
-            if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+            if config.FINETUNE_STRATEGY in PolicyVec:
                 policy_model.cuda()
 
         # loader
@@ -252,7 +254,7 @@ def train_net(args, config):
             raise ValueError('Not support optimizer {}!'.format(config.TRAIN.OPTIMIZER))
 
         # optimizer for the policy network
-        if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+        if config.FINETUNE_STRATEGY in PolicyVec:
             if config.POLICY.OPTIMIZER == 'SGD':
                 policy_optimizer = optim.SGD(policy_model.parameters(),
                                             lr=config.POLICY.LR * batch_size,
@@ -274,7 +276,7 @@ def train_net(args, config):
 
     # integrate with wandb
     wandb.watch(model, log='all')
-    if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+    if config.FINETUNE_STRATEGY in PolicyVec:
         wandb.watch(policy_model, log='all')
 
     # partial load pretrain state dict
@@ -390,7 +392,7 @@ def train_net(args, config):
     else:
         raise ValueError("Not support lr schedule: {}.".format(config.TRAIN.LR_SCHEDULE))
 
-    if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+    if config.FINETUNE_STRATEGY in PolicyVec:
         # setup lr step and lr scheduler for policy
         if config.POLICY.LR_SCHEDULE == 'plateau':
             print("Warning: not support resuming on plateau lr schedule!")
@@ -425,7 +427,7 @@ def train_net(args, config):
     if args.dist:
         for v in model.state_dict().values():
             distributed.broadcast(v, src=0)
-        if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+        if config.FINETUNE_STRATEGY in PolicyVec:
             for v in policy_model.state_dict().values():
                 distributed.broadcast(v, src=0)
         # for v in optimizer.state_dict().values():
@@ -446,7 +448,7 @@ def train_net(args, config):
                                           loss_scale=config.TRAIN.FP16_LOSS_SCALE,
                                           min_loss_scale=32.0)
         
-        if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+        if config.FINETUNE_STRATEGY in PolicyVec:
             policy_model, policy_optimizer = amp.initialize(policy_model, policy_optimizer,
                                             opt_level='O2',
                                             keep_batchnorm_fp32=False,
@@ -454,14 +456,14 @@ def train_net(args, config):
                                             min_loss_scale=32.0)
         if args.dist:
             model = Apex_DDP(model, delay_allreduce=True)
-            if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec:
+            if config.FINETUNE_STRATEGY in PolicyVec:
                 policy_model = Apex_DDP(policy_model, delay_allreduce=True)
 
     train(model, optimizer, lr_scheduler, train_loader, train_sampler, train_metrics,
           config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH, logger,
           rank=rank, batch_end_callbacks=batch_end_callbacks, epoch_end_callbacks=epoch_end_callbacks,
-          writer=writer, validation_monitor=validation_monitor, visualization_plotter=visualization_plotter if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec else None, fp16=config.TRAIN.FP16,
+          writer=writer, validation_monitor=validation_monitor, visualization_plotter=visualization_plotter if config.FINETUNE_STRATEGY in PolicyVec else None, fp16=config.TRAIN.FP16,
           clip_grad_norm=config.TRAIN.CLIP_GRAD_NORM,
-          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_net=policy_model if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec else None, policy_optimizer=policy_optimizer if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec else None, policy_lr_scheduler=policy_lr_scheduler if load_pretrained_vlbert and config.FINETUNE_STRATEGY in PolicyVec else None)
+          gradient_accumulate_steps=config.TRAIN.GRAD_ACCUMULATE_STEPS, finetune_strategy=config.FINETUNE_STRATEGY, policy_net=policy_model if config.FINETUNE_STRATEGY in PolicyVec else None, policy_optimizer=policy_optimizer if config.FINETUNE_STRATEGY in PolicyVec else None, policy_lr_scheduler=policy_lr_scheduler if config.FINETUNE_STRATEGY in PolicyVec else None, global_decision=config.POLICY_GLOBAL_DECISION)
 
     return rank, model
