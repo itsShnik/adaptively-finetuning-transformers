@@ -90,6 +90,9 @@ def train(net,
         if finetune_strategy in PolicyVec:
             policy_decisions = torch.zeros(PolicyVec[finetune_strategy]).cuda(non_blocking=True)
             policy_max = 0
+        else:
+            policy_decisions = None
+            policy_max = None
 
         print('PROGRESS: %.2f%%' % (100.0 * epoch / end_epoch))
 
