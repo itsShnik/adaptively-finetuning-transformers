@@ -49,7 +49,8 @@ def do_validation(net, val_loader, metrics, label_index_in_batch, epoch_num=0, f
         outputs.update({'label': label})
         metrics.update(outputs)
 
-    # plot val visualizations
-    print("Plotting val visualizations")
-    vis(finetune_strategy, policy_save, policy_max, epoch_num, mode='val')
+    if finetune_strategy in PolicyVec:
+        # plot val visualizations
+        print("Plotting val visualizations")
+        vis(finetune_strategy, policy_save, policy_max, epoch_num, mode='val')
 
