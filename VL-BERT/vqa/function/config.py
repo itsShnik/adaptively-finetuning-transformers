@@ -32,6 +32,9 @@ _C.CONSTRAIN_K_SCALE = 1
 _C.USE_DETERMINISTIC_POLICY_LOSS = False
 _C.DETERMINISTIC_POLICY_SCALE = 1
 
+_C.USE_LOG_FRACTION_LOSS = False
+_C.LOG_FRACTION_SCALE = 1
+
 _C.POLICY_GLOBAL_DECISION = False
 
 # ------------------------------------------------------------------------------------- #
@@ -276,7 +279,7 @@ _C.TRAIN.WD = 0.0001
 _C.TRAIN.MOMENTUM = 0.9
 _C.TRAIN.FP16 = False
 _C.TRAIN.FP16_LOSS_SCALE = 128.0
-_C.TRAIN.LOSS_LOGGERS = [('ans_loss', 'AnsLoss'), ('loss_k', 'ConstrainKLoss'), ('loss_d', 'DeterminsticPolicyLoss')]
+_C.TRAIN.LOSS_LOGGERS = [('ans_loss', 'AnsLoss'), ('loss_k', 'ConstrainKLoss'), ('loss_d', 'DeterminsticPolicyLoss'), ('loss_f', 'LogFractionLoss')]
 
 # ------------------------------------------------------------------------------------- #
 # Common validation related options
