@@ -36,6 +36,35 @@ class VisualizationPlotter:
             wandb.log({"SpotTune_Block Finetuning Fraction: {}".format(mode):plt})
             plt.close()
 
+        elif finetune_strategy == 'SpotTune_Res':
+
+            assert int(policy.size(0)) == 24, "SpotTune_Res policy doesn't match required dimension 24!"
+
+            # we need to create a lineplot
+            # scale policy
+            policy = policy / policy_max
+
+            # create a matplotlib figure
+            plt.style.use('seaborn-whitegrid')
+            fig = plt.figure()
+            ax = plt.axes()
+
+            x = []
+            for k in range(1,13):
+                x.append('SA_' + str(k))
+                x.append('OP_' + str(k))
+
+            plt.plot(x, list(policy))
+            plt.xlabel('Layers')
+            plt.ylabel('Finetuned Fraction')
+            plt.ylim(0,1)
+            plt.title(f'SpotTune_Res_{mode}_Epoch_{epoch}')
+
+            # just pass this plt to wandb.log while integrating with wandb
+            plt.savefig('visualizations/spottune_res_{}_epoch_{}.png'.format(mode, epoch))
+            wandb.log({"SpotTune_Res Finetuning Fraction: {}".format(mode):plt})
+            plt.close()
+
         elif finetune_strategy == 'SpotTune':
 
             assert int(policy.size(0)) == 180, "SpotTune policy doesn't match required dimension 180"
