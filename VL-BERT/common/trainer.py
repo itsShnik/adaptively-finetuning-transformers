@@ -15,7 +15,8 @@ except ImportError:
 # policy vector shapes
 PolicyVec = {'SpotTune':180,
         'SpotTune_Block':12,
-        'BlockDrop':12}
+        'BlockDrop':12,
+        'SpotTune_Res':24}
 
 # Parameter to pass to batch_end_callback
 BatchEndParam = namedtuple('BatchEndParams',
