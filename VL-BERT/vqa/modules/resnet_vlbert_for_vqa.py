@@ -7,7 +7,7 @@ from external.pytorch_pretrained_bert.modeling import BertPredictionHeadTransfor
 from common.module import Module
 from common.fast_rcnn import FastRCNN
 from common.visual_linguistic_bert import VisualLinguisticBert
-from common.auxiliary_losses import constrain_k_loss, deterministic_policy_loss
+from common.auxiliary_losses import constrain_k_loss, deterministic_policy_loss, log_fraction_loss
 
 BERT_WEIGHTS_NAME = 'pytorch_model.bin'
 
@@ -270,6 +270,11 @@ class ResNetVLBERT(Module):
                 loss_d = deterministic_policy_loss(policy, self.config.DETERMINISTIC_POLICY_SCALE)
                 loss += loss_d
                 outputs.update({'loss_d': loss_d})
+
+            if self.config.USE_LOG_FRACTION_LOSS:
+                loss_f = log_fraction_loss(policy, self.config.LOG_FRACTION_SCALE)
+                loss += loss_f
+                outputs.update({'loss_f': loss_f})
 
         return outputs, loss
 
