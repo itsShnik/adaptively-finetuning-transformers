@@ -7,7 +7,8 @@ from common.callbacks.epoch_end_callbacks.visualization_plotter import Visualiza
 # policy vector shapes
 PolicyVec = {'SpotTune':180,
         'SpotTune_Block':12,
-        'BlockDrop':12}
+        'BlockDrop':12,
+        'SpotTune_Res':24}
 
 # create a visualization object
 vis = VisualizationPlotter()
