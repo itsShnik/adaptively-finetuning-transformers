@@ -40,7 +40,8 @@ except ImportError:
 # Policies and shapes
 PolicyVec = {'SpotTune':180,
         'SpotTune_Block':12,
-        'BlockDrop':12}
+        'BlockDrop':12,
+        'SpotTune_Res':24}
 
 
 def train_net(args, config):
