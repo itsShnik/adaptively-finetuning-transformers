@@ -516,6 +516,13 @@ class BertLayer(nn.Module):
         # if the finetune strategy is spottune
         self.attention = BertAttention(config, finetune_strategy=finetune_strategy)
 
+        if finetune_strategy == 'SpotTune_Res':
+            self.parallel_attention = BertAttention(config, finetune_strategy=finetune_strategy)
+
+            # freeze the params
+            for params in self.parallel_attention.parameters():
+                params.requires_grad = False
+
         # for intermediate and output, we have to finetune on 
         # layer level, so just create parallel blocks here
         self.intermediate = BertIntermediate(config)
@@ -528,6 +535,13 @@ class BertLayer(nn.Module):
             # freeze the parameters from parallel blocks
             for params in self.parallel_intermediate.parameters():
                 params.requires_grad = False
+            for params in self.parallel_output.parameters():
+                params.requires_grad = False
+
+        elif finetune_strategy == 'SpotTune_Res':
+            self.parallel_output = BertOutput(config)
+
+            # Freeze the params
             for params in self.parallel_output.parameters():
                 params.requires_grad = False
 
@@ -547,6 +561,33 @@ class BertLayer(nn.Module):
             intermediate_output = action_mask * intermediate_output + (1-action_mask) * parallel_intermediate_output 
             current_index += 1
 
+            # for the output layer also, take the decision here
+            layer_output = self.output(intermediate_output, attention_output)
+            parallel_layer_output = self.parallel_output(intermediate_output, attention_output)
+            action = policy[:,current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            layer_output = action_mask * layer_output + (1-action_mask) * parallel_layer_output 
+            current_index += 1
+
+        elif self.finetune_strategy == 'SpotTune_Res':
+
+            if output_attention_probs:
+                attention_output, _, attention_probs = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+                parallel_attention_output, _, parallel_attention_probs = self.parallel_attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+            else:
+                attention_output, _ = self.attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+                parallel_attention_output, _ = self.parallel_attention(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
+
+            # take a decision here
+            action = policy[:, current_index].contiguous()
+            action_mask = action.float().view(-1, 1, 1)
+            attention_output = action_mask * attention_output + (1-action_mask) * parallel_attention_output
+            current_index += 1
+
+            # Using an intermediate layer; No parallel
+            intermediate_output = self.intermediate(attention_output)
+
+            # parallel for output
             # for the output layer also, take the decision here
             layer_output = self.output(intermediate_output, attention_output)
             parallel_layer_output = self.parallel_output(intermediate_output, attention_output)
@@ -620,7 +661,7 @@ class BertEncoder(nn.Module):
         current_index = 0
 
         # SpotTune Strategy
-        if self.finetune_strategy == 'SpotTune':
+        if self.finetune_strategy == 'SpotTune' or self.finetune_strategy == 'SpotTune_Res':
             for layer_module in self.layer:
                 if output_attention_probs:
                     hidden_states, current_index, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=policy, current_index=current_index)
