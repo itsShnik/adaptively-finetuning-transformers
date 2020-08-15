@@ -5,9 +5,7 @@ from common.gumbel_softmax import gumbel_softmax
 from common.callbacks.epoch_end_callbacks.visualization_plotter import VisualizationPlotter
 
 # policy vector shapes
-PolicyVec = {'SpotTune':180,
-        'SpotTune_Block':12,
-        'BlockDrop':12}
+from common.trainer import PolicyVec
 
 # create a visualization object
 vis = VisualizationPlotter()

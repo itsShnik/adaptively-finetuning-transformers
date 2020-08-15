@@ -30,18 +30,15 @@ from vqa.function.val import do_validation
 
 import wandb
 
+# Policies
+from common.trainer import PolicyVec
+
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as Apex_DDP
 except ImportError:
     pass
     #raise ImportError("Please install apex from https://www.github.com/nvidia/apex if you want to use fp16.")
-
-# Policies and shapes
-PolicyVec = {'SpotTune':180,
-        'SpotTune_Block':12,
-        'BlockDrop':12}
-
 
 def train_net(args, config):
     # will load pretrained
