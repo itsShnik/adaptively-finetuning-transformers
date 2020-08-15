@@ -315,7 +315,20 @@ class VisualLinguisticBert(BaseModel):
             for k in self.encoder.state_dict():
                 if 'parallel_' in str(k):
                     encoder_pretrained_state_dict[k] = encoder_pretrained_state_dict[k.replace('parallel_', '')]
-        self.encoder.load_state_dict(encoder_pretrained_state_dict)
+        encoder_state_dict = self.encoder.state_dict()
+
+        # print the keys that are not found in pretrained model
+        missing_keys = []
+        for k in encoder_state_dict:
+            if k not in encoder_pretrained_state_dict:
+                missing_keys.append(k)
+
+        if len(missing_keys) > 0:
+            print("Warning: Missing Keys: {}".format(missing_keys))
+
+        encoder_state_dict.update(encoder_pretrained_state_dict)
+        self.encoder.load_state_dict(encoder_state_dict)
+
         if self.config.with_pooler and len(pooler_pretrained_state_dict) > 0:
             self.pooler.load_state_dict(pooler_pretrained_state_dict)
 
