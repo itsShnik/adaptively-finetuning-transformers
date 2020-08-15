@@ -10,9 +10,9 @@ class VisualizationPlotter:
 
     def __call__(self, finetune_strategy, policy, policy_max, epoch, mode='train'):
         
-        if finetune_strategy == 'SpotTune_Block':
+        if finetune_strategy in ['SpotTune_Block', 'BlockDrop', 'BlockReplace']:
 
-            assert int(policy.size(0)) == 12, "SpotTune_Block policy doesn't match required dimension 12!"
+            assert int(policy.size(0)) == 12, f"{finetune_strategy} policy doesn't match required dimension 12!"
 
             # we need to create a lineplot
             # scale policy
@@ -26,14 +26,15 @@ class VisualizationPlotter:
             x = ['BL_' + str(k) for k in range(1,13)]
 
             plt.plot(x, list(policy))
+            ax.set_xticklabels(x)
             plt.xlabel('Layers')
-            plt.ylabel('Finetuned Fraction')
+            plt.ylabel('Finetuned/Used Fraction')
             plt.ylim(0,1)
-            plt.title(f'SpotTune_Block_{mode}_Epoch_{epoch}')
+            plt.title(f'{finetune_strategy}_{mode}_Epoch_{epoch}')
 
             # just pass this plt to wandb.log while integrating with wandb
-            plt.savefig('visualizations/spottune_block_{}_epoch_{}.png'.format(mode, epoch))
-            wandb.log({"SpotTune_Block Finetuning Fraction: {}".format(mode):plt})
+            plt.savefig('visualizations/{}_{}_epoch_{}.png'.format(finetune_strategy, mode, epoch))
+            wandb.log({"{} Finetuning Fraction: {}".format(finetune_strategy, mode):plt})
             plt.close()
 
         elif finetune_strategy == 'SpotTune':
@@ -56,30 +57,4 @@ class VisualizationPlotter:
             plt.sca(ax)
             plt.savefig('visualizations/spottune_epoch_{}_{}.png'.format(mode,epoch))
             wandb.log({'SpotTune Finetuning Fraction: {}'.format(mode):wandb.Image(plt)})
-            plt.close()
-
-        elif finetune_strategy == 'BlockDrop':
-
-            assert int(policy.size(0)) == 12, "BlockDrop policy doesn't match required dimension 12!"
-
-            # we need to create a lineplot
-            # scale policy
-            policy = policy / policy_max
-
-            # create a matplotlib figure
-            plt.style.use('seaborn-whitegrid')
-            fig = plt.figure()
-            ax = plt.axes()
-
-            x = ['BL_' + str(k) for k in range(1,13)]
-
-            plt.plot(x, list(policy))
-            plt.xlabel('Layers')
-            plt.ylabel('Used Fraction')
-            plt.ylim(0,1)
-            plt.title(f'BlockDrop_{mode}_Epoch_{epoch}')
-
-            # just pass this plt to wandb.log while integrating with wandb
-            plt.savefig('visualizations/BlockDrop_{}_epoch_{}.png'.format(mode, epoch))
-            wandb.log({"BlockDrop Finetuning Fraction: {}".format(mode):plt})
             plt.close()
