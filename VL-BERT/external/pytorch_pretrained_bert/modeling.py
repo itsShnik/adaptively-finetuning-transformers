@@ -592,6 +592,10 @@ class BertEncoder(nn.Module):
             for params in self.parallel_layer.parameters():
                 params.requires_grad = False
 
+        elif finetune_strategy == 'BlockReplace':
+            replace_layer = nn.Linear(config.hidden_size, config.hidden_size)
+            self.replace_layer = nn.ModuleList([copy.deepcopy(replace_layer) for _ in range(config.num_hidden_layers)])
+
         elif finetune_strategy == 'pretrained_frozen':
             # freeze the pretrained parameters
             for params in self.layer.parameters():
@@ -707,6 +711,50 @@ class BertEncoder(nn.Module):
                 if output_all_encoded_layers:
                     all_encoder_layers.append(hidden_states)
 
+        elif self.finetune_strategy == 'BlockReplace':
+            for layer_module, replace_layer_module in zip(self.layer, self.replace_layer):
+                # if we have to output attention blocks
+                if output_attention_probs:
+                    # compute the main layer
+                    hidden_states, _, attention_probs = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # compute the replace layer
+                    replace_hidden_states = replace_layer_module(hidden_states)
+
+                    # Now take the decision on basis of policy
+                    action = policy[:, current_index].contiguous() 
+                    action_mask = action.float().view(-1, 1, 1)
+
+                    hidden_states = action_mask * hidden_states + (1 - action_mask) * replace_hidden_states
+
+                    # increment the current index by 1
+                    # since we used 1 decision
+                    current_index += 1
+
+                    # append both the attention probs (frozen + not frozen)
+                    all_attention_probs.append(attention_probs)
+
+                else:
+                    # compute the main layer
+                    hidden_states, _ = layer_module(hidden_states, attention_mask, output_attention_probs=output_attention_probs, policy=None, current_index=None)
+
+                    # compute the parallel layer
+                    replace_hidden_states = replace_layer_module(hidden_states)
+
+                    # Now take the decision on basis of policy
+                    action = policy[:, current_index].contiguous() 
+                    action_mask = action.float().view(-1, 1, 1)
+
+                    hidden_states = action_mask * hidden_states + (1 - action_mask) * replace_hidden_states
+
+                    # increment the current index by 1
+                    # since we used 1 decision
+                    current_index += 1
+
+
+                # after we have gotten states from a block
+                if output_all_encoded_layers:
+                    all_encoder_layers.append(hidden_states)
         else:
             # for all other strategies, we use standard procedure
             for layer_module in self.layer: 
