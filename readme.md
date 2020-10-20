@@ -1,6 +1,6 @@
 # Adaptive Finetuning of Transformers
 
-This repository explores adaptively finetuning large pre-trained transformers. The experiments are conducted on vision and language models -- VLBERT and LXMERT which are based on single-stream and two stream architechtures respectively.
+This repository explores adaptively finetuning large pre-trained transformers. The experiments are conducted on vision and language models -- VLBERT and LXMERT which are based on single-stream and two stream architectures respectively.
 
 ## What are Transformers?
 
