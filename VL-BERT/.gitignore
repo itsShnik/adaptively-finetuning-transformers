@@ -20,7 +20,6 @@ output/*
 
 # wandb
 wandb/*
-visualizations/*
 
 #pyc files
 *.pyc
