@@ -32,3 +32,30 @@ We explore several different adaptive finetuning strategies in this repository. 
 3. __BlockDrop__: This strategy is slightly different from the other two. In this case, we drop some parts of the network adaptively, therefore, having a more efficient architecture at the inference time.
 
 ## Results and Visualizations
+
+### SpotTune and SpotTune\_Block
+
+| Finetune Strategy  | Train Accuracy | Val Accuracy | Generalization Error | Params                |
+| ------------------ | -------------- | ------------ | -------------------- | --------------------- |
+| Pretrained Frozen  | 61.47          | 59.57        | 1.90					| 30 (T) + 85 (NT)      |
+| Last 4 Trainable   | 76.92          | 67.68        | 9.24 			    | 58 (T) + 57 (NT)      |
+| Frozen (3,4,10,11) | 80.78          | 67.79        | 11.99			    | 87 (T) + 28 (NT)      |
+| Standard           | 83.40          | 68.22        | 15.18			    | 115 (T)               |
+| SpotTune\_Block    | 80.54          | 67.90        | 12.64			    | 115 + 34 (T), 85 (NT) |
+| SpotTune           | 81.21          | 68.14        | 13.07			    | 115 + 34 (T), 85 (NT) |
+
+### Visualizations for SpotTune
+
+| Epoch Number | Usage of Finetuned Blocks |
+| ------------ | ------------------------- |
+| 1 | ![Usage of finetuned blocks](visualizations/SpotTune_1.png?raw=true) |
+| 2 | ![Usage of finetuned blocks](visualizations/SpotTune_2.png?raw=true) |
+| 3 | ![Usage of finetuned blocks](visualizations/SpotTune_3.png?raw=true) |
+| 4 | ![Usage of finetuned blocks](visualizations/SpotTune_4.png?raw=true) |
+| 5 | ![Usage of finetuned blocks](visualizations/SpotTune_5.png?raw=true) |
+| 6 | ![Usage of finetuned blocks](visualizations/SpotTune_6.png?raw=true) |
+| 7 | ![Usage of finetuned blocks](visualizations/SpotTune_7.png?raw=true) |
+| 8 | ![Usage of finetuned blocks](visualizations/SpotTune_8.png?raw=true) |
+| 9 | ![Usage of finetuned blocks](visualizations/SpotTune_9.png?raw=true) |
+
+The darker the tone of the above heatmaps is, the more finetuning is done for each of the component.
