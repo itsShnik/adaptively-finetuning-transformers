@@ -24,7 +24,7 @@ Adaptive finetuning has been previously explored for residual networks \[[8][8],
 
 ## How to use this Repository?
 
-The experiments presented are conducted on VLBERT and LXMERT. Detailed instructions to reproduce the experiments, comparisons and results are shown in the respective folders ```VLBERT``` and ```LXMERT```. Additionally, I have provided the links for [Wandb][10] workspaces for experiments on both the architectures. You can find the results, visualizations, training procedures, configs etc. in detail there.
+The experiments presented are conducted on VLBERT and LXMERT. Detailed instructions to reproduce the experiments, comparisons and results are shown in the respective folders ``VLBERT`` and ``LXMERT``. Additionally, I have provided the links for Wandb workspaces for experiments on both the architectures \[[VLBERT](https://wandb.ai/shnik/adaptive-finetuning?workspace=user-shnik), [LXMERT](https://wandb.ai/shnik/adaptive-finetuning-lxmert?workspace=user-shnik)\]. You can find the results, visualizations, training procedures, configs etc. in detail there.
 
 ## References
 
@@ -38,7 +38,6 @@ The experiments presented are conducted on VLBERT and LXMERT. Detailed instructi
 8. [Guo, Y., Shi, H., Kumar, A., Grauman, K., Rosing, T., & Feris, R. (2019). Spottune: transfer learning through adaptive fine-tuning. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (pp. 4805-4814).][8]
 9. [Wu, Z., Nagarajan, T., Kumar, A., Rennie, S., Davis, L. S., Grauman, K., & Feris, R. (2018). Blockdrop: Dynamic inference paths in residual networks. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (pp. 8817-8826).][9]
 
----
 
 [1]: https://papers.nips.cc/paper/7181-attention-is-all-you-need.pdf
 [2]: https://arxiv.org/pdf/1810.04805.pdf
