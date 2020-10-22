@@ -4,7 +4,7 @@
 
 ## Data, Environment Setup and Running Instructions
 
-Detailed instructions for data and environment setup, installing the pre-trained models and executing the code can be found in [vlbert\_readme.md][1]. Currently, this repository supports the adaptive finetuning experiments on the VQAv2 and VQA-CPv2 datasets only.
+Detailed instructions for data and environment setup, installing the pre-trained models and executing the code can be found in [vlbert\_readme.md](./vlbert_readme.md). Currently, this repository supports the adaptive finetuning experiments on the VQAv2 and VQA-CPv2 datasets only.
 
 Summary: The following command can be used to execute the code on VQAv2 dataset with distributed training on multiple GPUs.
 
