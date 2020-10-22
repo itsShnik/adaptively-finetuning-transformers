@@ -78,7 +78,7 @@ Sample visualization for BlockDrop strategy on VLBERT-Base trained on VQAv2 data
 
 | Epoch Number | Fraction of Data that uses the Block|
 | ------------ | ------------------------- |
-| 5 | ![Usage of finetuned blocks](visualizations/BlockDrop_val_epoch4.png?raw=true) |
+| 5 | ![Usage of finetuned blocks](visualizations/BlockDrop_val_epoch_4.png?raw=true) |
 
 ## Wandb
 
