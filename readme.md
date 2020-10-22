@@ -22,6 +22,23 @@ The experiments presented in this repository choose the parts of the pre-trained
 
 Adaptive finetuning has been previously explored for residual networks \[[8][8], [9][9]\]. The policy network can be optimized in specific ways to improve the efficiency, accuracy, generalization of the models.
 
+
+## Adaptive Finetuning Basics
+
+We explore several different adaptive finetuning strategies in this repository. One thing that is common to all the strategies is the use of a policy network to determine which parts of the model to finetune/drop based on the input images-text pair. The chosen policy network is relatively very small when compared to the original VLBERT/LXMERT network. The policy network is optimized using Gumbel Softmax which relieves the argmax constraints to softmax while backpropagation.
+
+## Adaptive Finetuning Strategies For Transformers
+
+1. __SpotTune\_Block__: The encoder of transformer-like architectures is usually made of stacked multi-headed self-attention blocks. For example VLBERT-Base uses 12 such blocks each with 12 attention heads. While using the SpotTune\_Block strategy, for each input sample (image-text pair), we make a decision for each of the block, whether to use the pre-trained weights or to finetune the weights. The process is depicted for an intermediate transformer block in the diagram below.
+
+![SpotTune\_Block](images/spottune_block.png?raw=true)
+
+2. __SpotTune__: We take the architecture adaptation to next level. Each of the transformer block comprises of several components for example, a transformer block in VLBERT-Base has 12 attention heads and 3 feedforward layers i.e 15 components in total. We take a decision for each component, whether to use the pre-trained weights or to finetune the weights.
+
+3. __SpotTune\_Res__: Each transformer block has 2 skip connections. We take a decision for each part that lies between the skip connections.
+
+4. __Others__: You can explore other strategies by checking out the wandb links of the projects given below.
+
 ## How to use this Repository?
 
 The experiments presented are conducted on VLBERT and LXMERT. Detailed instructions to reproduce the experiments, comparisons and results are shown in the respective folders ``VLBERT`` and ``LXMERT``. Additionally, I have provided the links for Wandb workspaces for experiments on both the architectures \[[VLBERT](https://wandb.ai/shnik/adaptive-finetuning?workspace=user-shnik), [LXMERT](https://wandb.ai/shnik/adaptive-finetuning-lxmert?workspace=user-shnik)\]. You can find the results, visualizations, training procedures, configs etc. in detail there.
