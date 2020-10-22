@@ -46,16 +46,40 @@ We explore several different adaptive finetuning strategies in this repository. 
 
 ### Visualizations for SpotTune
 
+Sample visualization for SpotTune strategy on VLBERT-Base trained on VQAv2 dataset.
+
 | Epoch Number | Usage of Finetuned Blocks |
 | ------------ | ------------------------- |
-| 1 | ![Usage of finetuned blocks](visualizations/SpotTune_1.png?raw=true) |
-| 2 | ![Usage of finetuned blocks](visualizations/SpotTune_2.png?raw=true) |
-| 3 | ![Usage of finetuned blocks](visualizations/SpotTune_3.png?raw=true) |
-| 4 | ![Usage of finetuned blocks](visualizations/SpotTune_4.png?raw=true) |
 | 5 | ![Usage of finetuned blocks](visualizations/SpotTune_5.png?raw=true) |
-| 6 | ![Usage of finetuned blocks](visualizations/SpotTune_6.png?raw=true) |
-| 7 | ![Usage of finetuned blocks](visualizations/SpotTune_7.png?raw=true) |
-| 8 | ![Usage of finetuned blocks](visualizations/SpotTune_8.png?raw=true) |
-| 9 | ![Usage of finetuned blocks](visualizations/SpotTune_9.png?raw=true) |
 
 The darker the tone of the above heatmaps is, the more finetuning is done for each of the component.
+
+### Visualizations for SpotTune\_Block
+
+Sample visualization for SpotTune\_Block strategy on VLBERT-Base trained on VQAv2 dataset.
+
+| Epoch Number | Usage of Finetuned Blocks |
+| ------------ | ------------------------- |
+| 5 | ![Usage of finetuned blocks](visualizations/spottune_block_epoch_0.png?raw=true) |
+
+### BlockDrop Results
+
+| Experiments                                                                  | Training Acc | Val Acc |
+| ---------------------------------------------------------------------------- | ------------ | ------- |
+| VLBERT-Base [12 Layer][Pretrained] |              | 68.22   |
+| VLBERT [4 Layer][Initialized from pretrained VLBERT-Base] | 77.09        | 66.23   |
+| Blockdrop on VLBERT-Base [No additional loss][All 12 blocks used] | 81.69        | 68.11   |
+| Blockdrop on VLBERT-Base [Constrain K loss][4 blocks used] | 73.99        | 66.26   |
+| Blockdrop on VLBERT-Base [Constrain K loss][Global decision at inference] | 77.25        | 66.80   |
+
+### Visualizations for BlockDrop
+
+Sample visualization for BlockDrop strategy on VLBERT-Base trained on VQAv2 dataset.
+
+| Epoch Number | Fraction of Data that uses the Block|
+| ------------ | ------------------------- |
+| 5 | ![Usage of finetuned blocks](visualizations/BlockDrop_val_epoch4.png?raw=true) |
+
+## Wandb
+
+I have experimented with a lot of other adaptive finetuning methods, on other datasets and having different visualizations. I used wandb to log all my visualizations and training data. The link for the project can be found [here](https://wandb.ai/shnik/adaptive-finetuning?workspace=user-shnik).
