@@ -4,3 +4,6 @@
 
 *pycache*
 wandb/*
+
+# image files
+*.png
