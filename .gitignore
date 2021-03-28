@@ -1,1 +1,3 @@
 VL-BERT/data
+*.model
+*.png
