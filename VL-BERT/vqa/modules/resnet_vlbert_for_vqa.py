@@ -33,7 +33,7 @@ class ResNetVLBERT(Module):
                 raise NotImplementedError
         self.image_feature_bn_eval = config.NETWORK.IMAGE_FROZEN_BN
 
-        self.tokenizer = BertTokenizer.from_pretrained(config.NETWORK.BERT_MODEL_NAME)
+        self.tokenizer = BertTokenizer.from_pretrained(config.NETWORK.BERT_TOKENIZER_MODEL_NAME)
 
         language_pretrained_model_path = None
         if config.NETWORK.BERT_PRETRAINED != '':
@@ -78,6 +78,10 @@ class ResNetVLBERT(Module):
             )
         else:
             raise ValueError("Not support classifier type: {}!".format(config.NETWORK.CLASSIFIER_TYPE))
+
+        # The attention pool layer
+        if self.config.NETWORK.AP:
+            self.attention_pool = nn.Linear(dim, 1)
 
         # init weights
         self.init_weight()
@@ -140,13 +144,19 @@ class ResNetVLBERT(Module):
         row_id += row_id_broadcaster
         return object_reps[row_id.view(-1), span_tags_fixed.view(-1)].view(*span_tags_fixed.shape, -1)
 
-    def prepare_text_from_qa(self, question, question_tags, question_mask, answer, answer_tags, answer_mask):
+    def prepare_text_from_qa(self, question, question_tags, question_mask):
         batch_size, max_q_len = question.shape
-        _, max_a_len = answer.shape
-        max_len = (question_mask.sum(1) + answer_mask.sum(1)).max() + 3
-        cls_id, sep_id = self.tokenizer.convert_tokens_to_ids(['[CLS]', '[SEP]'])
-        q_end = 1 + question_mask.sum(1, keepdim=True)
-        a_end = q_end + 1 + answer_mask.sum(1, keepdim=True)
+        if self.config.NETWORK.AP:
+            # No cls token, so only 2 instead of 3
+            max_len = (question_mask.sum(1)).max() + 1
+            sep_id = self.tokenizer.convert_tokens_to_ids(['[SEP]'])[0]
+            q_end = question_mask.sum(1, keepdim=True)
+        else:
+            max_len = (question_mask.sum(1)).max() + 2
+            cls_id, sep_id = self.tokenizer.convert_tokens_to_ids(['[CLS]', '[SEP]'])
+            q_end = 1 + question_mask.sum(1, keepdim=True)
+
+        #a_end = q_end + 1 + answer_mask.sum(1, keepdim=True)
         input_ids = torch.zeros((batch_size, max_len), dtype=question.dtype, device=question.device)
         input_mask = torch.ones((batch_size, max_len), dtype=torch.bool, device=question.device)
         input_type_ids = torch.zeros((batch_size, max_len), dtype=question.dtype, device=question.device)
@@ -154,19 +164,24 @@ class ResNetVLBERT(Module):
         grid_i, grid_j = torch.meshgrid(torch.arange(batch_size, device=question.device),
                                         torch.arange(max_len, device=question.device))
 
-        input_mask[grid_j > a_end] = 0
-        input_type_ids[(grid_j > q_end) & (grid_j <= a_end)] = 1
-        q_input_mask = (grid_j > 0) & (grid_j < q_end)
-        a_input_mask = (grid_j > q_end) & (grid_j < a_end)
-        input_ids[:, 0] = cls_id
-        input_ids[grid_j == q_end] = sep_id
-        input_ids[grid_j == a_end] = sep_id
-        input_ids[q_input_mask] = question[question_mask]
-        input_ids[a_input_mask] = answer[answer_mask]
-        text_tags[q_input_mask] = question_tags[question_mask]
-        text_tags[a_input_mask] = answer_tags[answer_mask]
+        #input_mask[grid_j > a_end] = 0
+        #input_type_ids[(grid_j > q_end) & (grid_j <= a_end)] = 1
 
-        return input_ids, input_type_ids, text_tags, input_mask, (a_end - 1).squeeze(1)
+        if self.config.NETWORK.AP:
+            q_input_mask = (grid_j >= 0) & (grid_j < q_end)
+        else:
+            q_input_mask = (grid_j > 0) & (grid_j < q_end)
+            input_ids[:, 0] = cls_id
+
+        #a_input_mask = (grid_j > q_end) & (grid_j < a_end)
+        input_ids[grid_j == q_end] = sep_id
+        #input_ids[grid_j == a_end] = sep_id
+        input_ids[q_input_mask] = question[question_mask]
+        #input_ids[a_input_mask] = answer[answer_mask]
+        text_tags[q_input_mask] = question_tags[question_mask]
+        #text_tags[a_input_mask] = answer_tags[answer_mask]
+
+        return input_ids, input_type_ids, text_tags, input_mask #, (a_end - 1).squeeze(1)
 
     def train_forward(self,
                       image,
@@ -196,20 +211,19 @@ class ResNetVLBERT(Module):
         question_tags = question.new_zeros(question_ids.shape)
         question_mask = (question > 0.5)
 
+        """
         answer_ids = question_ids.new_zeros((question_ids.shape[0], 1)).fill_(
             self.tokenizer.convert_tokens_to_ids(['[MASK]'])[0])
         answer_mask = question_mask.new_zeros(answer_ids.shape).fill_(1)
         answer_tags = question_tags.new_zeros(answer_ids.shape)
+        """
 
         ############################################
 
         # prepare text
-        text_input_ids, text_token_type_ids, text_tags, text_mask, ans_pos = self.prepare_text_from_qa(question_ids,
+        text_input_ids, text_token_type_ids, text_tags, text_mask = self.prepare_text_from_qa(question_ids,
                                                                                                        question_tags,
-                                                                                                       question_mask,
-                                                                                                       answer_ids,
-                                                                                                       answer_tags,
-                                                                                                       answer_mask)
+                                                                                                       question_mask)
         if self.config.NETWORK.NO_GROUNDING:
             obj_rep_zeroed = obj_reps['obj_reps'].new_zeros(obj_reps['obj_reps'].shape)
             text_tags.zero_()
@@ -237,7 +251,10 @@ class ResNetVLBERT(Module):
                                       policy=policy)
         _batch_inds = torch.arange(question.shape[0], device=question.device)
 
-        hm = hidden_states[_batch_inds, ans_pos]
+        if self.config.NETWORK.AP:
+            hm = torch.matmul(F.softmax(self.attention_pool(hidden_states), dim=1).transpose(-1, -2), hidden_states).squeeze(-2)[_batch_inds]
+        else:
+            hm = hidden_states[_batch_inds, 0]
         # hm = F.tanh(self.hm_out(hidden_states[_batch_inds, ans_pos]))
         # hi = F.tanh(self.hi_out(hidden_states[_batch_inds, ans_pos + 2]))
 
@@ -300,20 +317,19 @@ class ResNetVLBERT(Module):
         question_tags = question.new_zeros(question_ids.shape)
         question_mask = (question > 0.5)
 
+        """
         answer_ids = question_ids.new_zeros((question_ids.shape[0], 1)).fill_(
             self.tokenizer.convert_tokens_to_ids(['[MASK]'])[0])
         answer_mask = question_mask.new_zeros(answer_ids.shape).fill_(1)
         answer_tags = question_tags.new_zeros(answer_ids.shape)
+        """
 
         ############################################
 
         # prepare text
-        text_input_ids, text_token_type_ids, text_tags, text_mask, ans_pos = self.prepare_text_from_qa(question_ids,
+        text_input_ids, text_token_type_ids, text_tags, text_mask = self.prepare_text_from_qa(question_ids,
                                                                                                        question_tags,
-                                                                                                       question_mask,
-                                                                                                       answer_ids,
-                                                                                                       answer_tags,
-                                                                                                       answer_mask)
+                                                                                                       question_mask)
         if self.config.NETWORK.NO_GROUNDING:
             obj_rep_zeroed = obj_reps['obj_reps'].new_zeros(obj_reps['obj_reps'].shape)
             text_tags.zero_()
@@ -341,7 +357,10 @@ class ResNetVLBERT(Module):
                                       policy=policy)
         _batch_inds = torch.arange(question.shape[0], device=question.device)
 
-        hm = hidden_states[_batch_inds, ans_pos]
+        if self.config.NETWORK.AP:
+            hm = torch.matmul(F.softmax(self.attention_pool(hidden_states), dim=1).transpose(-1, -2), hidden_states).squeeze(-2)[_batch_inds]
+        else:
+            hm = hidden_states[_batch_inds, 0]
         # hm = F.tanh(self.hm_out(hidden_states[_batch_inds, ans_pos]))
         # hi = F.tanh(self.hi_out(hidden_states[_batch_inds, ans_pos + 2]))
 
