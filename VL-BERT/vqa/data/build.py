@@ -82,7 +82,8 @@ def make_dataloader(cfg, dataset=None, mode='train', distributed=False, num_repl
                                 add_image_as_a_box=cfg.DATASET.ADD_IMAGE_AS_A_BOX,
                                 aspect_grouping=aspect_grouping,
                                 mask_size=(cfg.DATASET.MASK_SIZE, cfg.DATASET.MASK_SIZE),
-                                pretrained_model_name=cfg.NETWORK.BERT_MODEL_NAME, toy_dataset=cfg.DATASET.TOY, toy_samples=cfg.DATASET.TOY_SAMPLES)
+                                pretrained_model_name=cfg.NETWORK.BERT_TOKENIZER_MODEL_NAME, train_fraction=cfg.DATASET.TRAIN_FRACTION,
+                                toy_dataset=cfg.DATASET.TOY, toy_samples=cfg.DATASET.TOY_SAMPLES)
 
     sampler = make_data_sampler(dataset, shuffle, distributed, num_replicas, rank)
     batch_sampler = make_batch_data_sampler(dataset, sampler, aspect_grouping, batch_size)

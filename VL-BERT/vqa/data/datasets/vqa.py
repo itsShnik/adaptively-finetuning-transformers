@@ -10,6 +10,7 @@ import sys
 import time
 import pprint
 import logging
+import random
 
 import torch
 from torch.utils.data import Dataset
@@ -31,7 +32,7 @@ class VQA(Dataset):
                  zip_mode=False, cache_mode=False, cache_db=True, ignore_db_cache=True,
                  tokenizer=None, pretrained_model_name=None,
                  add_image_as_a_box=False, mask_size=(14, 14),
-                 aspect_grouping=False, toy_dataset=False, toy_samples=128, **kwargs):
+                 aspect_grouping=False, train_fraction=100, toy_dataset=False, toy_samples=128, **kwargs):
         """
         Visual Question Answering Dataset
 
@@ -173,6 +174,11 @@ class VQA(Dataset):
         self.database = self.load_annotations()
         if self.aspect_grouping:
             self.group_ids = self.group_aspect(self.database)
+
+        # train on a fraction of data
+        if 'train' in image_set and train_fraction < 100:
+            lim = (train_fraction / 100) * len(self.database)
+            self.database = random.sample(self.database, lim)
 
         # toy dataset
         if toy_dataset:
