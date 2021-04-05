@@ -275,9 +275,10 @@ def train_net(args, config):
                 raise ValueError('Not support optimizer {}!'.format(config.POLICY.OPTIMIZER))
 
     # integrate with wandb
-    wandb.watch(model, log='all')
-    if config.FINETUNE_STRATEGY in PolicyVec:
-        wandb.watch(policy_model, log='all')
+    if rank is None or rank == 0:
+        wandb.watch(model, log='all')
+        if config.FINETUNE_STRATEGY in PolicyVec:
+            wandb.watch(policy_model, log='all')
 
     # partial load pretrain state dict
     if load_pretrained_vlbert:
