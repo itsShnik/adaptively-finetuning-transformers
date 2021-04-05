@@ -55,7 +55,9 @@ def main():
     args, config = parse_args()
 
     # initialize on wandb
-    wandb.init(project='adaptive-finetuning', name=config.VERSION, config=config)
+    rank = int(os.environ['RANK'] or 0)
+    if rank is None or rank == 0:
+        wandb.init(project='SeqPool', entity='shnik', name=config.VERSION, config=config)
 
     rank, model = train_net(args, config)
     if args.do_test and (rank is None or rank == 0):
