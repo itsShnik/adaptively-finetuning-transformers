@@ -24,7 +24,7 @@ class ValidationMonitor(object):
         self.best_epoch = state_dict['best_epoch']
         self.best_val = state_dict['best_val']
 
-    def __call__(self, epoch_num, net, optimizer, writer, finetune_strategy='standard', policy_net=None, policy_optimizer=None, global_decision=False, policy_decisions=None, policy_max=None):
+    def __call__(self, rank, epoch_num, net, optimizer, writer, finetune_strategy='standard', policy_net=None, policy_optimizer=None, global_decision=False, policy_decisions=None, policy_max=None):
         self.val_func(net, self.val_loader, self.metrics, self.label_index_in_batch, epoch_num=epoch_num, finetune_strategy=finetune_strategy, policy_net=policy_net, global_decision=global_decision, policy_decisions=policy_decisions, policy_total=policy_max)
 
         name, value = self.metrics.get()
@@ -40,7 +40,8 @@ class ValidationMonitor(object):
                 writer.add_scalar(tag='Val-' + n,
                                   scalar_value=v,
                                   global_step=epoch_num + 1)
-                wandb.log({'Val {}'.format(n):v})
+                if rank is None or rank == 0:
+                    wandb.log({'Val {}'.format(n):v})
         logging.info(s)
         print(s)
 

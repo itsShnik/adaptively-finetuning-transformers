@@ -215,13 +215,15 @@ def train(net,
                                       scalar_value=float(loss.item()),
                                       global_step=global_steps)
                     # log loss on wandb
-                    wandb.log({'Training Loss': float(loss.item())})
+                    if rank is None or rank == 0:
+                        wandb.log({'Training Loss': float(loss.item())})
                     name, value = metrics.get()
                     for n, v in zip(name, value):
                         writer.add_scalar(tag='Train-' + n,
                                           scalar_value=v,
                                           global_step=global_steps)
-                        wandb.log({'Train {}'.format(n): v})
+                        if rank is None or rank == 0:
+                            wandb.log({'Train {}'.format(n): v})
 
             metric_time = time.time() - metric_time
 
@@ -242,7 +244,7 @@ def train(net,
             print("Plotting Training Visualizations")
             visualization_plotter(finetune_strategy, policy_decisions, policy_max, epoch)
         if validation_monitor is not None:
-            validation_monitor(epoch, net, optimizer, writer, finetune_strategy=finetune_strategy, policy_net=policy_net, policy_optimizer=policy_optimizer, global_decision=global_decision, policy_decisions=policy_decisions, policy_max=policy_max)
+            validation_monitor(rank, epoch, net, optimizer, writer, finetune_strategy=finetune_strategy, policy_net=policy_net, policy_optimizer=policy_optimizer, global_decision=global_decision, policy_decisions=policy_decisions, policy_max=policy_max)
         if epoch_end_callbacks is not None:
             _multiple_callbacks(epoch_end_callbacks, epoch, net, optimizer, writer, validation_monitor=validation_monitor, policy_net=policy_net, policy_optimizer=policy_optimizer)
 
