@@ -3,23 +3,23 @@ RNG_SEED: 12345
 OUTPUT_PATH: './output/vl-bert/vqa'
 MODULE: ResNetVLBERT
 POLICY_MODULE: PolicyResNetVLBERT
-FINETUNE_STRATEGY: 'BlockDrop'
+FINETUNE_STRATEGY: 'standard'
 GPUS: '0,1,2,3'
 LOG_FREQUENT: 100
 VAL_FREQUENT: 1
 CHECKPOINT_FREQUENT: 1
 MODEL_PREFIX: 'vl-bert_base_res101_vqa'
 NUM_WORKERS_PER_GPU: 4
-VERSION: 'blockdrop_with_ck4_dpl'
+VERSION: 'vlbert-base-ap'
 SCALES:
 - 600
 - 1000
 
-USE_CONSTRAIN_K_LOSS: true
+USE_CONSTRAIN_K_LOSS: false
 CONSTRAIN_K_NUM_BLOCKS: 4
 CONSTRAIN_K_SCALE: 1
 
-USE_DETERMINISTIC_POLICY_LOSS: true
+USE_DETERMINISTIC_POLICY_LOSS: false
 DETERMINISTIC_POLICY_SCALE: 1
 
 DATASET:
@@ -39,11 +39,12 @@ DATASET:
   MASK_SIZE: 14
   BOXES: "10-100ada"
   USE_IMDB: false
+  TRAIN_FRACTION: 100
   TOY: false
   TOY_SAMPLES: 128
 
 NETWORK:
-  PARTIAL_PRETRAIN: "./model/pretrained_model/vl-bert-base-prec.model"
+  PARTIAL_PRETRAIN: ""
   PARTIAL_PRETRAIN_PREFIX_CHANGES:
   - "vlbert.mlm_head.predictions.transform->final_mlp.0"
   - "module.vlbert.mlm_head.predictions.transform->module.final_mlp.0"
@@ -70,11 +71,13 @@ NETWORK:
   IMAGE_FINAL_DIM: 768
   IMAGE_SEMANTIC: false
   OUTPUT_CONV5: false
-  BERT_MODEL_NAME: './model/pretrained_model/bert-base-uncased'
+  BERT_TOKENIZER_MODEL_NAME: './model/pretrained_model/bert-base-uncased'
+  BERT_MODEL_NAME: ''
   BERT_PRETRAINED: ''
   BERT_PRETRAINED_EPOCH: 0
   BERT_FROZEN: false
   ENABLE_CNN_REG_LOSS: false
+  AP: true
 
   VLBERT:
     input_transform_type: 1
@@ -95,8 +98,8 @@ NETWORK:
     visual_ln: true
     FROZEN_LAYERS: [2,3,9,10]
 
-  CLASSIFIER_TYPE: "mlm"
-  CLASSIFIER_PRETRAINED: true
+  CLASSIFIER_TYPE: "1fc"
+  CLASSIFIER_PRETRAINED: false
   CLASSIFIER_DROPOUT: 0.1
 
 POLICY:
@@ -161,7 +164,7 @@ POLICY:
     visual_ln: true
 
   CLASSIFIER_TYPE: "mlm"
-  CLASSIFIER_PRETRAINED: true
+  CLASSIFIER_PRETRAINED: false
   CLASSIFIER_DROPOUT: 0.1
   OUTPUT_SIZE: 24
 
